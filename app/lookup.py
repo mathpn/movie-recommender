@@ -21,8 +21,8 @@ def _hamming_distance(a: int, b: np.ndarray, max_bits: int) -> np.ndarray:
 class GenreSearcher:
     def __init__(self, movie_ids: list[int], encoded_genres: list[int], n_genres: int):
         self.encoded_genres = np.array(encoded_genres)
-        self.movie_ids = movie_ids
-        self.movie2genres = dict(zip(movie_ids, encoded_genres))
+        self.movie_ids = list(movie_ids)
+        self.movie2genres = dict(zip(movie_ids, list(encoded_genres)))
         self.n_genres = n_genres
 
     def search_by_movie(self, movie_id: int, k: Optional[int] = None) -> list[int]:
@@ -56,8 +56,8 @@ def create_genre_searcher(movie_ids: list[int], genres: list[list[str]]) -> Genr
 
 class KeywordSearcher:
     def __init__(self, movie_ids: list[int], sparse_keyword_count: scipy.sparse.csr.csr_matrix):
-        self.movie_ids = movie_ids
-        self.sparse_keywords = sparse_keyword_count
+        self.movie_ids = list(movie_ids)
+        self.sparse_keywords = sparse_keyword_count.copy()
         self.movie_2_internal_id = {movie_id: i for i, movie_id in enumerate(movie_ids)}
 
     def search_by_movie(
