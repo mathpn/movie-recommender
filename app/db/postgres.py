@@ -2,7 +2,7 @@
 Functions to interact with PostgreSQL database.
 """
 
-from typing import Optional
+from typing import Optional, Union
 
 import asyncpg
 
@@ -44,7 +44,7 @@ async def insert_movie_metadata(pool: asyncpg.Pool, metadata: MovieMetadata) -> 
         )
 
 
-async def get_movie_metadata(pool: asyncpg.Pool, movie_id: int) -> asyncpg.Record:
+async def get_movie_metadata(pool: asyncpg.Pool, movie_id: int) -> MovieMetadata:
     async with pool.acquire() as connection:
         result = await connection.fetchrow(
             """
@@ -57,6 +57,14 @@ async def get_movie_metadata(pool: asyncpg.Pool, movie_id: int) -> asyncpg.Recor
             movie_id,
         )
     return MovieMetadata(**result)
+
+
+async def get_all_movies_genres(pool: asyncpg.Pool) -> tuple[tuple[int], tuple[list[str]]]:
+    async with pool.acquire() as connection:
+        rows = await connection.fetch(
+            "SELECT movie_id, genres FROM metadata ORDER BY movie_id"
+        )
+    return tuple(zip(*[tuple(row) for row in rows]))
 
 
 async def create_ratings_table(pool: asyncpg.Pool) -> None:

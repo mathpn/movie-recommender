@@ -4,7 +4,8 @@ import asyncpg
 from fastapi import FastAPI, Query, Request
 from starlette.responses import JSONResponse
 
-from app.db.postgres import insert_user
+from app.db.postgres import insert_user, get_all_movies_genres
+from app.lookup import create_genre_searcher
 
 app = FastAPI()
 
@@ -12,6 +13,9 @@ app = FastAPI()
 @app.on_event("startup")
 async def startup_event():
     app.state.pool = await asyncpg.create_pool(os.environ["POSTGRES_URI"])
+    movie_ids, genres = await get_all_movies_genres(app.state.pool)
+    app.state.genre_searcher = create_genre_searcher(movie_ids, genres)
+
 
 
 @app.post("/create_user")

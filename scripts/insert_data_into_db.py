@@ -21,10 +21,6 @@ from app.models import MovieMetadata, Rating
 POSTGRES_URI = "postgresql://postgres:postgres@localhost:5401/movies"
 
 
-def get_genres(genres):
-    return [x["name"] for x in genres]
-
-
 def get_director(x):
     for i in x:
         if i["job"] == "Director":
@@ -36,7 +32,7 @@ def get_list(x):
         names = [i["name"] for i in x]
         if len(names) > 3:
             names = names[:3]
-        return names if names else None
+        return names if names else []
 
 
 def is_integer(field):
