@@ -25,3 +25,11 @@ class Rating(NamedTuple):
     movie_id: int
     rating: int
     timestamp: datetime
+
+
+class KeywordFields(NamedTuple):
+    movie_id: int
+    genres: list[str]
+    keywords: list[str]
+    cast: list[str]
+    director: str

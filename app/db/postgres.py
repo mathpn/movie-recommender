@@ -2,11 +2,11 @@
 Functions to interact with PostgreSQL database.
 """
 
-from typing import Optional, Union
+from typing import Any, Optional
 
 import asyncpg
 
-from app.models import MovieMetadata, Rating
+from app.models import KeywordFields, MovieMetadata, Rating
 
 
 async def create_metadata_table(pool: asyncpg.Pool) -> None:
@@ -59,12 +59,29 @@ async def get_movie_metadata(pool: asyncpg.Pool, movie_id: int) -> MovieMetadata
     return MovieMetadata(**result)
 
 
-async def get_all_movies_genres(pool: asyncpg.Pool) -> tuple[tuple[int], tuple[list[str]]]:
+async def get_all_movies_genres(pool: asyncpg.Pool) -> dict[str, Any]:
+    async with pool.acquire() as connection:
+        rows = await connection.fetch("SELECT movie_id, genres FROM metadata ORDER BY movie_id")
+    movie_ids = [row["movie_id"] for row in rows]
+    genres = [row["genres"] for row in rows]
+    return {"movie_ids": movie_ids, "genres": genres}
+
+
+async def get_keyword_searcher_fields(pool: asyncpg.Pool) -> list[KeywordFields]:
     async with pool.acquire() as connection:
         rows = await connection.fetch(
-            "SELECT movie_id, genres FROM metadata ORDER BY movie_id"
+            "SELECT movie_id, genres, keywords, movie_cast, director FROM metadata ORDER BY movie_id"
         )
-    return tuple(zip(*[tuple(row) for row in rows]))
+    return [
+        KeywordFields(
+            movie_id=row["movie_id"],
+            genres=row["genres"],
+            keywords=row["keywords"],
+            cast=row["movie_cast"],
+            director=row["director"],
+        )
+        for row in rows
+    ]
 
 
 async def create_ratings_table(pool: asyncpg.Pool) -> None:
@@ -110,7 +127,4 @@ async def insert_user(pool: asyncpg.Pool, username: str) -> None:
 
 async def get_user_id(pool: asyncpg.Pool, username: str) -> Optional[int]:
     async with pool.acquire() as connection:
-        return await connection.fetchval(
-            "SELECT user_id FROM users WHERE username = $1",
-            username
-        )
+        return await connection.fetchval("SELECT user_id FROM users WHERE username = $1", username)
