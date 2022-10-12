@@ -1,5 +1,6 @@
 CREATE TABLE IF NOT EXISTS users (
-    user_id serial PRIMARY KEY,
-    username text,
+    user_id SERIAL PRIMARY KEY,
+    username TEXT,
+    vector REAL[],
     CONSTRAINT unique_username UNIQUE (username)
 );

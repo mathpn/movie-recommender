@@ -13,7 +13,7 @@ from functools import partial
 import asyncpg
 import pandas as pd
 
-from app.db.postgres import (create_metadata_table, create_ratings_table,
+from app.db.postgres import (create_movies_table, create_ratings_table,
                              create_users_table, insert_movie_metadata,
                              insert_movie_rating, insert_user)
 from app.models import MovieMetadata, Rating
@@ -47,7 +47,7 @@ def get_tmdb_id(rating_id, links) -> int:
     values = links[links["movieId"] == rating_id]["tmdbId"].values
     if len(values) == 0:
         return -1
-    elif math.isnan(values[0]):
+    if math.isnan(values[0]):
         return -1
     return int(values[0])
 
@@ -73,7 +73,7 @@ async def main():
         movies_metadata[feature] = movies_metadata[feature].apply(get_list)
 
     pool = await asyncpg.create_pool(POSTGRES_URI)
-    await create_metadata_table(pool)
+    await create_movies_table(pool)
     row_dicts = movies_metadata.to_dict(orient="records")
     tasks = []
     for row in row_dicts:

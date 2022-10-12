@@ -9,9 +9,9 @@ import asyncpg
 from app.models import KeywordFields, MovieMetadata, Rating
 
 
-async def create_metadata_table(pool: asyncpg.Pool) -> None:
+async def create_movies_table(pool: asyncpg.Pool) -> None:
     async with pool.acquire() as connection:
-        await connection.execute(open("./sql/create_metadata.sql", "r").read())
+        await connection.execute(open("./sql/create_movies.sql", "r").read())
 
 
 def _movie_metadata_to_tuple(metadata: MovieMetadata):
@@ -33,7 +33,7 @@ async def insert_movie_metadata(pool: asyncpg.Pool, metadata: MovieMetadata) -> 
         row = _movie_metadata_to_tuple(metadata)
         await connection.execute(
             """
-            INSERT INTO metadata (
+            INSERT INTO movies (
                 movie_id, movie_title, movie_cast,
                 director, keywords, genres, popularity,
                 vote_average, vote_count)
@@ -52,7 +52,7 @@ async def get_movie_metadata(pool: asyncpg.Pool, movie_id: int) -> MovieMetadata
                     movie_id, movie_title, movie_cast,
                     director, keywords, genres, popularity,
                     vote_average, vote_count
-                FROM metadata WHERE movie_id = $1
+                FROM movies WHERE movie_id = $1
             """,
             movie_id,
         )
@@ -61,7 +61,7 @@ async def get_movie_metadata(pool: asyncpg.Pool, movie_id: int) -> MovieMetadata
 
 async def get_all_movies_genres(pool: asyncpg.Pool) -> dict[str, Any]:
     async with pool.acquire() as connection:
-        rows = await connection.fetch("SELECT movie_id, genres FROM metadata ORDER BY movie_id")
+        rows = await connection.fetch("SELECT movie_id, genres FROM movies ORDER BY movie_id")
     movie_ids = [row["movie_id"] for row in rows]
     genres = [row["genres"] for row in rows]
     return {"movie_ids": movie_ids, "genres": genres}
@@ -70,7 +70,7 @@ async def get_all_movies_genres(pool: asyncpg.Pool) -> dict[str, Any]:
 async def get_keyword_searcher_fields(pool: asyncpg.Pool) -> list[KeywordFields]:
     async with pool.acquire() as connection:
         rows = await connection.fetch(
-            "SELECT movie_id, genres, keywords, movie_cast, director FROM metadata ORDER BY movie_id"
+            "SELECT movie_id, genres, keywords, movie_cast, director FROM movies ORDER BY movie_id"
         )
     return [
         KeywordFields(
