@@ -8,14 +8,13 @@ import asyncio
 import math
 from ast import literal_eval
 from datetime import datetime
-from functools import partial
 
 import asyncpg
 import pandas as pd
 
-from app.db.postgres import (create_movies_table, create_ratings_table,
-                             create_users_table, insert_movie_metadata,
-                             insert_movie_rating, insert_user)
+from app.db.postgres import (create_movies_table, create_ratings_primary_key, create_ratings_table,
+                             create_users_table, insert_movie_metadatas,
+                             insert_movie_ratings, drop_ratings_primary_key, insert_users)
 from app.models import MovieMetadata, Rating
 
 POSTGRES_URI = "postgresql://postgres:postgres@localhost:5401/movies"
@@ -43,13 +42,57 @@ def is_integer(field):
         return False
 
 
-def get_tmdb_id(rating_id, links) -> int:
-    values = links[links["movieId"] == rating_id]["tmdbId"].values
-    if len(values) == 0:
+def get_tmdb_id(raw_id) -> int:
+    if math.isnan(raw_id):
         return -1
-    if math.isnan(values[0]):
-        return -1
-    return int(values[0])
+    return int(raw_id)
+
+
+def process_metadata(row):
+    if not isinstance(row["title"], str) and math.isnan(row["title"]):
+        return None
+    return MovieMetadata(
+        row["id"],
+        row["title"],
+        row["cast"],
+        row["director"],
+        row["keywords"],
+        row["genres"],
+        float(row["popularity"]),
+        row["vote_average"],
+        row["vote_count"],
+    )
+
+
+def process_rating(row):
+    if row["tmdb_id"] < 0:
+        return None
+    return Rating(
+        user_id=row["userId"],
+        movie_id=row["tmdb_id"],
+        rating=int(row["rating"] * 10),
+        timestamp=datetime.fromtimestamp(row["timestamp"]),
+    )
+
+
+async def insert_data(pool: asyncpg.Pool, data_table: pd.DataFrame, processing_fn, callback):
+    batch = []
+    tasks = set()
+    for _, row in data_table.iterrows():
+        row = processing_fn(row)
+        if row is None:
+            continue
+        batch.append(row)
+        if len(batch) >= 1024:
+            task = asyncio.create_task(callback(pool, batch))
+            tasks.add(task)
+            task.add_done_callback(tasks.discard)
+            batch = []
+        if len(tasks) > 10:
+            await asyncio.gather(*tasks)
+    if batch:
+        tasks.add(asyncio.create_task(callback(pool, batch)))
+    await asyncio.gather(*tasks)
 
 
 async def main():
@@ -74,49 +117,33 @@ async def main():
 
     pool = await asyncpg.create_pool(POSTGRES_URI)
     await create_movies_table(pool)
-    row_dicts = movies_metadata.to_dict(orient="records")
-    tasks = []
-    for row in row_dicts:
-        if not isinstance(row["title"], str) and math.isnan(row["title"]):
-            continue
-        metadata = MovieMetadata(
-            row["id"],
-            row["title"],
-            row["cast"],
-            row["director"],
-            row["keywords"],
-            row["genres"],
-            float(row["popularity"]),
-            row["vote_average"],
-            row["vote_count"],
-        )
-        tasks.append(asyncio.create_task(insert_movie_metadata(pool, metadata)))
-    await asyncio.gather(*tasks)
+    print("inserting movie metadata")
+    await insert_data(pool, movies_metadata, process_metadata, insert_movie_metadatas)
 
+    # TODO try COPY FROM because bulk inserting is still too slow for the big ratings table
     ratings = pd.read_csv("./data/ratings_small.csv")
     links = pd.read_csv("./data/links.csv")
-    get_ids = partial(get_tmdb_id, links=links)
-    ratings["tmdb_id"] = ratings["movieId"].apply(get_ids)
+    print('loaded ratings table')
+    movie_ids = links['movieId'].tolist()
+    tmdb_ids = [get_tmdb_id(x) for x in links['tmdbId'].tolist()]
+    movie_2_tmdb = dict(zip(movie_ids, tmdb_ids))
+    ratings["tmdb_id"] = ratings["movieId"].apply(lambda movie_id: movie_2_tmdb.get(movie_id, -1))
+    print('got movie ids')
     await create_ratings_table(pool)
-    tasks = []
-    for row_dict in ratings.to_dict(orient="records"):
-        if row_dict["tmdb_id"] < 0:
-            continue
-        rating = Rating(
-            user_id=row_dict["userId"],
-            movie_id=row_dict["tmdb_id"],
-            rating=int(row_dict["rating"] * 10),
-            timestamp=datetime.fromtimestamp(row_dict["timestamp"]),
-        )
-        tasks.append(asyncio.create_task(insert_movie_rating(pool, rating)))
-    await asyncio.gather(*tasks)
+    print('inserting ratings')
+    await drop_ratings_primary_key(pool)
+    await insert_data(pool, ratings, process_rating, insert_movie_ratings)
+    await create_ratings_primary_key(pool)
 
+    print('inserting users')
     await create_users_table(pool)
-    tasks = []
+    batch = []
     max_user_id = ratings['userId'].max()
     for i in range(max_user_id):
-        tasks.append(asyncio.create_task(insert_user(pool, f"data_{i + 1}")))
-    await asyncio.gather(*tasks)
+        batch.append(f"data_{i + 1}")
+        if len(batch) >= 1024:
+            await insert_users(pool, batch)
+            batch = []
 
 
 if __name__ == "__main__":

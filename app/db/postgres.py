@@ -44,6 +44,22 @@ async def insert_movie_metadata(pool: asyncpg.Pool, metadata: MovieMetadata) -> 
         )
 
 
+async def insert_movie_metadatas(pool: asyncpg.Pool, metadatas: list[MovieMetadata]) -> None:
+    async with pool.acquire() as connection:
+        row_gen = (_movie_metadata_to_tuple(metadata) for metadata in metadatas)
+        await connection.executemany(
+            """
+            INSERT INTO movies (
+                movie_id, movie_title, movie_cast,
+                director, keywords, genres, popularity,
+                vote_average, vote_count)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            ON CONFLICT DO NOTHING
+        """,
+            row_gen,
+        )
+
+
 async def get_movie_metadata(pool: asyncpg.Pool, movie_id: int) -> MovieMetadata:
     async with pool.acquire() as connection:
         result = await connection.fetchrow(
@@ -130,11 +146,61 @@ async def insert_movie_rating(pool: asyncpg.Pool, rating: Rating) -> None:
         )
 
 
+async def drop_ratings_primary_key(pool: asyncpg.Pool):
+    """Drop primary key. Used for large inserts on startup."""
+    async with pool.acquire() as connection:
+        await connection.execute("ALTER TABLE ratings DROP CONSTRAINT ratings_pkey")
+
+
+async def create_ratings_primary_key(pool: asyncpg.Pool):
+    """Recreate primary key. Used for large inserts on startup."""
+    async with pool.acquire() as connection:
+        await connection.execute(
+            "ALTER TABLE ratings ADD CONSTRAINT ratings_pkey PRIMARY KEY (user_id, movie_id)"
+        )
+
+
+async def insert_movie_ratings(pool: asyncpg.Pool, ratings: list[Rating]) -> None:
+    """
+    Bulk insert of movie ratings.
+    """
+    async with pool.acquire() as connection:
+        ratings_gen = (_rating_to_tuple(rating) for rating in ratings)
+        await connection.executemany(
+            """
+            INSERT INTO ratings
+            (user_id, movie_id, rating, rating_timestamp)
+            VALUES ($1, $2, $3, $4)
+            ON CONFLICT DO NOTHING
+        """,
+            ratings_gen,
+        )
+
+
 async def get_user_movie_rating(pool: asyncpg.Pool, user_id: int, movie_id: int) -> Optional[int]:
     async with pool.acquire() as connection:
         return await connection.fetchval(
             "SELECT rating FROM ratings WHERE user_id = $1 AND movie_id = $2", user_id, movie_id
         )
+
+
+async def get_all_ratings(pool: asyncpg.Pool):
+    async with pool.acquire() as connection:
+        async with connection.transaction():
+            async for row in connection.cursor(
+                "SELECT user_id, movie_id, rating FROM ratings ORDER BY user_id"
+            ):
+                yield dict(row)
+
+
+async def sample_ratings(pool: asyncpg.Pool, prob: float = 0.1, limit: Optional[int] = None):
+    async with pool.acquire() as connection:
+        async with connection.transaction():
+            query = f"SELECT user_id, movie_id, rating FROM ratings WHERE random() < $1"
+            if limit:
+                query += f" LIMIT {limit}"
+            async for row in connection.cursor(query, prob):
+                yield dict(row)
 
 
 async def create_users_table(pool: asyncpg.Pool):
@@ -145,6 +211,11 @@ async def create_users_table(pool: asyncpg.Pool):
 async def insert_user(pool: asyncpg.Pool, username: str) -> None:
     async with pool.acquire() as connection:
         await connection.execute("INSERT INTO users (username) VALUES ($1)", username)
+
+
+async def insert_users(pool: asyncpg.Pool, usernames: list[str]) -> None:
+    async with pool.acquire() as connection:
+        await connection.executemany("INSERT INTO users (username) VALUES ($1)", usernames)
 
 
 async def get_user_id(pool: asyncpg.Pool, username: str) -> Optional[int]:
