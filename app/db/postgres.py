@@ -6,7 +6,7 @@ from typing import Any, Optional
 
 import asyncpg
 
-from app.models import KeywordFields, MovieMetadata, Rating
+from app.models import KeywordFields, MovieMetadata, Rating, VectorBias
 
 
 async def create_movies_table(pool: asyncpg.Pool) -> None:
@@ -84,6 +84,28 @@ async def get_keyword_searcher_fields(pool: asyncpg.Pool) -> list[KeywordFields]
     ]
 
 
+async def write_movie_vector_bias(pool: asyncpg.Pool, vector_biases: VectorBias, movie_id: int):
+    async with pool.acquire() as connection:
+        await connection.execute(
+            "UPDATE movies SET vector = $1, bias = $2 WHERE movie_id = $3",
+            vector_biases.vector,
+            vector_biases.bias,
+            movie_id,
+        )
+
+
+async def get_movie_vector_bias(pool: asyncpg.Pool, movie_id: int) -> Optional[VectorBias]:
+    async with pool.acquire() as connection:
+        row = await connection.fetchrow(
+            "SELECT vector, bias FROM movies WHERE user_id = $1", movie_id
+        )
+    vector = row.get("vector")
+    bias = row.get("bias")
+    if vector is None or bias is None:
+        return None
+    return VectorBias(vector=vector, bias=bias)
+
+
 async def create_ratings_table(pool: asyncpg.Pool) -> None:
     async with pool.acquire() as connection:
         await connection.execute(open("./sql/create_ratings.sql", "r").read())
@@ -128,3 +150,25 @@ async def insert_user(pool: asyncpg.Pool, username: str) -> None:
 async def get_user_id(pool: asyncpg.Pool, username: str) -> Optional[int]:
     async with pool.acquire() as connection:
         return await connection.fetchval("SELECT user_id FROM users WHERE username = $1", username)
+
+
+async def write_user_vector_bias(pool: asyncpg.Pool, vector_biases: VectorBias, user_id: int):
+    async with pool.acquire() as connection:
+        await connection.execute(
+            "UPDATE users SET vector = $1, bias = $2 WHERE user_id = $3",
+            vector_biases.vector,
+            vector_biases.bias,
+            user_id,
+        )
+
+
+async def get_user_vector_bias(pool: asyncpg.Pool, user_id: int) -> Optional[VectorBias]:
+    async with pool.acquire() as connection:
+        row = await connection.fetchrow(
+            "SELECT vector, bias FROM users WHERE user_id = $1", user_id
+        )
+    vector = row.get("vector")
+    bias = row.get("bias")
+    if vector is None or bias is None:
+        return None
+    return VectorBias(vector=vector, bias=bias)

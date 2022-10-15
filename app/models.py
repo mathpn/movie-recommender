@@ -27,6 +27,11 @@ class Rating(NamedTuple):
     timestamp: datetime
 
 
+class VectorBias(NamedTuple):
+    vector: list[float]
+    bias: float
+
+
 class KeywordFields(NamedTuple):
     movie_id: int
     genres: list[str]

@@ -8,5 +8,6 @@ CREATE TABLE IF NOT EXISTS movies (
     popularity REAL,
     vote_average REAL,
     vote_count INTEGER,
-    vector REAL[]
+    vector REAL[],
+    bias REAL
 );
