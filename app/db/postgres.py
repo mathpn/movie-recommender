@@ -110,6 +110,15 @@ async def write_movie_vector_bias(pool: asyncpg.Pool, vector_biases: VectorBias,
         )
 
 
+async def write_bulk_movie_vector_bias(pool: asyncpg.Pool, chunk: list[tuple[VectorBias, int]]):
+    async with pool.acquire() as connection:
+        row_generator = ((x[0].vector, x[0].bias, x[1]) for x in chunk)
+        await connection.executemany(
+            "UPDATE movies SET vector = $1, bias = $2 WHERE movie_id = $3",
+            row_generator
+        )
+
+
 async def get_movie_vector_bias(pool: asyncpg.Pool, movie_id: int) -> Optional[VectorBias]:
     async with pool.acquire() as connection:
         row = await connection.fetchrow(
@@ -120,6 +129,11 @@ async def get_movie_vector_bias(pool: asyncpg.Pool, movie_id: int) -> Optional[V
     if vector is None or bias is None:
         return None
     return VectorBias(vector=vector, bias=bias)
+
+
+async def delete_all_movie_vector_bias(pool: asyncpg.Pool) -> None:
+    async with pool.acquire() as connection:
+        await connection.execute("UPDATE movies SET vector = NULL, bias = NULL")
 
 
 async def create_ratings_table(pool: asyncpg.Pool) -> None:
@@ -233,6 +247,14 @@ async def write_user_vector_bias(pool: asyncpg.Pool, vector_biases: VectorBias, 
         )
 
 
+async def write_bulk_user_vector_bias(pool: asyncpg.Pool, chunk: list[tuple[VectorBias, int]]):
+    async with pool.acquire() as connection:
+        row_generator = ((x[0].vector, x[0].bias, x[1]) for x in chunk)
+        await connection.executemany(
+            "UPDATE users SET vector = $1, bias = $2 WHERE user_id = $3", row_generator
+        )
+
+
 async def get_user_vector_bias(pool: asyncpg.Pool, user_id: int) -> Optional[VectorBias]:
     async with pool.acquire() as connection:
         row = await connection.fetchrow(
@@ -243,3 +265,8 @@ async def get_user_vector_bias(pool: asyncpg.Pool, user_id: int) -> Optional[Vec
     if vector is None or bias is None:
         return None
     return VectorBias(vector=vector, bias=bias)
+
+
+async def delete_all_user_vector_bias(pool: asyncpg.Pool) -> None:
+    async with pool.acquire() as connection:
+        await connection.execute("UPDATE users SET vector = NULL, bias = NULL")
