@@ -2,6 +2,7 @@
 Kernel Matrix Factorization (KMF) model.
 """
 
+#pylint: disable=no-member
 import asyncpg
 import numpy as np
 import torch
@@ -13,7 +14,7 @@ from app.db.postgres import (delete_all_movie_vector_bias,
                              delete_all_user_vector_bias, sample_ratings,
                              write_bulk_movie_vector_bias,
                              write_bulk_user_vector_bias)
-from app.models import VectorBias
+from app.models import Rating, VectorBias
 
 
 def mse(scores, pred):
@@ -49,11 +50,12 @@ class KMF(nn.Module):
         return pred_score, users_emb, items_emb, users_bias, items_bias
 
 
+@torch.no_grad()
 async def write_model_data(embedding, biases, mapping, callback, pool, chunk_size=2048):
     chunk = []
     for user, i in mapping.items():
-        vector = embedding.weight[i, :].detach().tolist()
-        bias = biases[i].detach().item()
+        vector = embedding.weight[i, :].detach().cpu().tolist()
+        bias = biases[i].detach().cpu().item()
         vector_bias = VectorBias(vector, bias)
         chunk.append((vector_bias, user))
         if len(chunk) >= chunk_size or i == len(mapping) - 1:
@@ -154,6 +156,7 @@ async def run_train_pipeline(
     verbose: bool = False,
 ) -> None:
     """Run a full training and store vectors in the database."""
+    # TODO add global_bias to database
     dataset, users_2_ids, movies_2_ids = await fetch_data(pool, proportion, test_split)
     model = train_kmf_model(
         dataset, users_2_ids, movies_2_ids, emb_dim, alpha=alpha, verbose=verbose
@@ -177,3 +180,41 @@ async def run_train_pipeline(
         write_bulk_movie_vector_bias,
         pool,
     )
+
+
+def train_new_user_vector(ratings: list[Rating], emb_dim: int, item_emb, item_bias, global_bias, alpha: float = 0.01):
+    """
+    (Re)train a user vector with new data without retraining the entire model.
+    
+    Inspired by https://www.ismll.uni-hildesheim.de/pub/pdfs/Rendle2008-Online_Updating_Regularized_Kernel_Matrix_Factorization_Models.pdf
+    """
+    # TODO finish and test
+    new_user_emb = nn.Parameter(torch.zeros(1, emb_dim))
+    nn.init.normal_(new_user_emb, 0, 0.1)
+    new_user_bias = nn.Parameter(torch.tensor(0.0))
+
+    device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+    new_items = torch.tensor([movie_id_to_emb(rating.movie_id) for rating in ratings], dtype=torch.long).to(device)
+    new_ratings = torch.tensor([rating.rating for rating in ratings]).to(device)
+
+    print(len(new_items))
+    user_optim = torch.optim.SGD([new_user_emb, new_user_bias], lr=1e-2)
+    global_bias = model.global_bias.data.cpu()
+    for i in range(20):
+        user_optim.zero_grad()
+        items_emb = item_emb(new_items)
+        items_emb = items_emb.cpu().detach()
+        items_bias = item_bias[new_items]
+        items_bias = items_bias.cpu().detach()
+    
+        pred = 5 * torch.sigmoid(global_bias.detach() + new_user_bias + items_bias + (items_emb * new_user_emb).sum(1))
+        mse_loss = mse(new_ratings, pred)
+        if i % 5 == 0:
+            print(f"loss = {float(mse_loss):.2f}")
+        l2_loss = alpha * new_user_emb.pow(2).sum() + new_user_bias.pow(2)
+        l2_loss = 0
+        loss = mse_loss * len(new_items) + l2_loss
+        loss.backward()
+        nn.utils.clip_grad_norm_([new_user_emb, new_user_bias], 100)
+        user_optim.step()
+    # TODO write to database
