@@ -12,9 +12,10 @@ from datetime import datetime
 import asyncpg
 import pandas as pd
 
-from app.db.postgres import (create_movies_table, create_ratings_primary_key, create_ratings_table,
-                             create_users_table, insert_movie_metadatas,
-                             insert_movie_ratings, drop_ratings_primary_key, insert_users)
+from app.db.postgres import (create_movies_table, create_ratings_primary_key,
+                             create_ratings_table, create_users_table,
+                             drop_ratings_primary_key, insert_movie_metadatas,
+                             insert_movie_ratings, insert_users)
 from app.models import MovieMetadata, Rating
 
 POSTGRES_URI = "postgresql://postgres:postgres@localhost:5401/movies"
@@ -120,8 +121,7 @@ async def main():
     print("inserting movie metadata")
     await insert_data(pool, movies_metadata, process_metadata, insert_movie_metadatas)
 
-    # TODO try COPY FROM because bulk inserting is still too slow for the big ratings table
-    ratings = pd.read_csv("./data/ratings.csv")
+    ratings = pd.read_csv("./data/ratings_small.csv")
     links = pd.read_csv("./data/links.csv")
     print('loaded ratings table')
     movie_ids = links['movieId'].tolist()
@@ -136,8 +136,6 @@ async def main():
     await create_ratings_table(pool)
     ratings_tuples = (tuple(x) for x in ratings.values)
     print('inserting ratings')
-    ratings.to_csv("/tmp/ratings.csv", index=None)
-    exit()
     await drop_ratings_primary_key(pool)
     async with pool.acquire() as conn:
         await conn.copy_records_to_table("ratings", records=ratings_tuples, columns=["user_id", "rating", "rating_timestamp", "movie_id"])
