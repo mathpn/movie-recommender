@@ -3,6 +3,7 @@ from time import perf_counter
 
 import asyncpg
 from fastapi import FastAPI, Query, Request
+from fastapi.concurrency import run_in_threadpool
 from starlette.responses import JSONResponse
 
 from app.db.postgres import (get_all_movies_genres,

@@ -12,10 +12,11 @@ from datetime import datetime
 import asyncpg
 import pandas as pd
 
-from app.db.postgres import (create_movies_table, create_ratings_primary_key,
-                             create_ratings_table, create_users_table,
-                             drop_ratings_primary_key, insert_movie_metadatas,
-                             insert_movie_ratings, insert_users)
+from app.db.postgres import (create_global_table, create_movies_table,
+                             create_ratings_primary_key, create_ratings_table,
+                             create_users_table, drop_ratings_primary_key,
+                             insert_movie_metadatas, insert_movie_ratings,
+                             insert_users)
 from app.models import MovieMetadata, Rating
 
 POSTGRES_URI = "postgresql://postgres:postgres@localhost:5401/movies"
@@ -118,6 +119,7 @@ async def main():
 
     pool = await asyncpg.create_pool(POSTGRES_URI)
     await create_movies_table(pool)
+    await create_global_table(pool)
     print("inserting movie metadata")
     await insert_data(pool, movies_metadata, process_metadata, insert_movie_metadatas)
 
@@ -138,8 +140,15 @@ async def main():
     print('inserting ratings')
     await drop_ratings_primary_key(pool)
     async with pool.acquire() as conn:
-        await conn.copy_records_to_table("ratings", records=ratings_tuples, columns=["user_id", "rating", "rating_timestamp", "movie_id"])
-        await conn.execute("DELETE FROM ratings a USING ratings b WHERE a.ctid < b.ctid AND (a.user_id, a.movie_id) = (b.user_id, b.movie_id)")
+        await conn.copy_records_to_table(
+            "ratings",
+            records=ratings_tuples,
+            columns=["user_id", "rating", "rating_timestamp", "movie_id"]
+        )
+        await conn.execute("""
+            DELETE FROM ratings a USING ratings b
+            WHERE a.ctid < b.ctid AND (a.user_id, a.movie_id) = (b.user_id, b.movie_id)
+        """)
     await create_ratings_primary_key(pool)
     print('inserting users')
     await create_users_table(pool)

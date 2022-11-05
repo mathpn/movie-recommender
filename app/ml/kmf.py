@@ -12,7 +12,7 @@ from torch.utils.data import DataLoader
 
 from app.db.postgres import (delete_all_movie_vector_bias,
                              delete_all_user_vector_bias, sample_ratings,
-                             write_bulk_movie_vector_bias,
+                             update_global_bias, write_bulk_movie_vector_bias,
                              write_bulk_user_vector_bias)
 from app.models import Rating, VectorBias
 
@@ -63,7 +63,7 @@ async def write_model_data(embedding, biases, mapping, callback, pool, chunk_siz
             chunk = []
 
 
-async def fetch_data(pool: asyncpg.Pool, proportion: float, test_split: float = 0.2):
+async def fetch_data(pool: asyncpg.Pool, proportion: float):
     users, movies, ratings = [], [], []
     async for row in sample_ratings(pool, prob=proportion):
         users.append(row["user_id"])
@@ -156,14 +156,15 @@ async def run_train_pipeline(
     verbose: bool = False,
 ) -> None:
     """Run a full training and store vectors in the database."""
-    # TODO add global_bias to database
-    dataset, users_2_ids, movies_2_ids = await fetch_data(pool, proportion, test_split)
+    dataset, users_2_ids, movies_2_ids = await fetch_data(pool, proportion)
     model = train_kmf_model(
-        dataset, users_2_ids, movies_2_ids, emb_dim, alpha=alpha, verbose=verbose
+        dataset, users_2_ids, movies_2_ids, emb_dim, test_size=test_split, alpha=alpha, verbose=verbose
     )
 
     await delete_all_movie_vector_bias(pool)
     await delete_all_user_vector_bias(pool)
+
+    await update_global_bias(pool, float(model.global_bias))
 
     await write_model_data(
         model.user_emb,

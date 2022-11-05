@@ -270,3 +270,17 @@ async def get_user_vector_bias(pool: asyncpg.Pool, user_id: int) -> Optional[Vec
 async def delete_all_user_vector_bias(pool: asyncpg.Pool) -> None:
     async with pool.acquire() as connection:
         await connection.execute("UPDATE users SET vector = NULL, bias = NULL")
+
+
+async def create_global_table(pool: asyncpg.Pool) -> None:
+    async with pool.acquire() as connection:
+        await connection.execute(open("./sql/create_global.sql", "r").read())
+
+
+async def update_global_bias(pool: asyncpg.Pool, bias: float) -> None:
+    async with pool.acquire() as connection:
+        value = await connection.fetchval("SELECT bias FROM global")
+        if value is None:
+            await connection.execute("INSERT INTO global (bias) VALUES ($1)", 1.0)
+
+        await connection.execute("UPDATE global SET bias = $1", bias)
