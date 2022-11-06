@@ -3,6 +3,8 @@ Kernel Matrix Factorization (KMF) model.
 """
 
 #pylint: disable=no-member
+import asyncio
+
 import asyncpg
 import numpy as np
 import torch
@@ -11,9 +13,13 @@ from torch import nn
 from torch.utils.data import DataLoader
 
 from app.db.postgres import (delete_all_movie_vector_bias,
-                             delete_all_user_vector_bias, sample_ratings,
-                             update_global_bias, write_bulk_movie_vector_bias,
-                             write_bulk_user_vector_bias)
+                             delete_all_user_vector_bias, get_global_bias,
+                             get_movie_vector_bias, get_user_ratings,
+                             sample_ratings, update_global_bias,
+                             write_bulk_movie_vector_bias,
+                             write_bulk_user_vector_bias,
+                             write_user_vector_bias)
+from app.logger import logger
 from app.models import Rating, VectorBias
 
 
@@ -125,7 +131,7 @@ def train_kmf_model(
         mse_acc /= steps
         l2_acc /= steps
         if verbose:
-            print(f"Epoch {epoch + 1} -> MSE = {mse_acc:.3f} | L2 reg = {l2_acc:.2f}")
+            logger.info(f"Epoch {epoch + 1} -> MSE = {mse_acc:.3f} | L2 reg = {l2_acc:.2f}")
 
         test_loss = test_steps = 0
         model.eval()
@@ -141,7 +147,7 @@ def train_kmf_model(
         test_loss /= test_steps
         test_losses.append(test_loss)
         if verbose:
-            print(f"Test: MSE = {test_loss:.3f}")
+            logger.info(f"Test: MSE = {test_loss:.3f}")
         if len(test_losses) > stop_after and np.all(np.diff(test_losses)[-stop_after:] > -1e-3):
             break
     return model
@@ -160,6 +166,7 @@ async def run_train_pipeline(
     model = train_kmf_model(
         dataset, users_2_ids, movies_2_ids, emb_dim, test_size=test_split, alpha=alpha, verbose=verbose
     )
+    logger.info("finished training new KMF model, writing new data to database")
 
     await delete_all_movie_vector_bias(pool)
     await delete_all_user_vector_bias(pool)
@@ -183,39 +190,71 @@ async def run_train_pipeline(
     )
 
 
-def train_new_user_vector(ratings: list[Rating], emb_dim: int, item_emb, item_bias, global_bias, alpha: float = 0.01):
+def train_new_user_vector(
+    ratings: list[Rating],
+    items_emb: torch.Tensor,
+    items_bias: torch.Tensor,
+    global_bias: float,
+    alpha: float = 0.01,
+    steps: int = 20,
+    verbose: bool = False,
+) -> VectorBias:
     """
     (Re)train a user vector with new data without retraining the entire model.
     
     Inspired by https://www.ismll.uni-hildesheim.de/pub/pdfs/Rendle2008-Online_Updating_Regularized_Kernel_Matrix_Factorization_Models.pdf
     """
-    # TODO finish and test
+    emb_dim = items_emb.shape[-1]
     new_user_emb = nn.Parameter(torch.zeros(1, emb_dim))
     nn.init.normal_(new_user_emb, 0, 0.1)
     new_user_bias = nn.Parameter(torch.tensor(0.0))
+    new_ratings = torch.tensor([float(r.rating) / 10 for r in ratings])
 
-    device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
-    new_items = torch.tensor([movie_id_to_emb(rating.movie_id) for rating in ratings], dtype=torch.long).to(device)
-    new_ratings = torch.tensor([rating.rating for rating in ratings]).to(device)
-
-    print(len(new_items))
-    user_optim = torch.optim.SGD([new_user_emb, new_user_bias], lr=1e-2)
-    global_bias = model.global_bias.data.cpu()
-    for i in range(20):
+    user_optim = torch.optim.RMSprop([new_user_emb, new_user_bias], lr=1e-2)
+    for i in range(steps):
         user_optim.zero_grad()
-        items_emb = item_emb(new_items)
-        items_emb = items_emb.cpu().detach()
-        items_bias = item_bias[new_items]
-        items_bias = items_bias.cpu().detach()
     
-        pred = 5 * torch.sigmoid(global_bias.detach() + new_user_bias + items_bias + (items_emb * new_user_emb).sum(1))
+        pred = 5 * torch.sigmoid(global_bias + new_user_bias + items_bias + (items_emb * new_user_emb).sum(1))
         mse_loss = mse(new_ratings, pred)
-        if i % 5 == 0:
-            print(f"loss = {float(mse_loss):.2f}")
+        if verbose and (i % 5 == 0 or (i + 1) == steps):
+            logger.info(f"loss = {float(mse_loss):.2f}")
         l2_loss = alpha * new_user_emb.pow(2).sum() + new_user_bias.pow(2)
-        l2_loss = 0
-        loss = mse_loss * len(new_items) + l2_loss
+        loss = mse_loss * len(new_ratings) + l2_loss
         loss.backward()
-        nn.utils.clip_grad_norm_([new_user_emb, new_user_bias], 100)
         user_optim.step()
-    # TODO write to database
+    return VectorBias(vector=new_user_emb.detach().tolist(), bias=new_user_bias.detach().item())
+
+
+async def online_user_pipeline(pool: asyncpg.Pool, user_id: int) -> None:
+    ratings = await get_user_ratings(pool, user_id)
+    if ratings is None:
+        logger.warning(f"online user pipeline: user ID {user_id} not found, interrupting pipeline")
+        return
+
+    global_bias = await get_global_bias(pool)
+    if global_bias is None:
+        logger.warning(f"online user pipeline: global bias not set, interrupting pipeline")
+        return
+
+    tasks = [asyncio.create_task(get_movie_vector_bias(pool, r.movie_id)) for r in ratings]
+    vector_biases = await asyncio.gather(*tasks)
+
+    valid_ratings, valid_vb = [], []
+    for rating, vb in zip(ratings, vector_biases):
+        if vb is None:
+            continue
+        valid_ratings.append(rating)
+        valid_vb.append(vb)
+
+    if not valid_vb:
+        logger.warning(
+            f"online user pipeline: no movie vectors retrieved for user {user_id}, interrupting pipeline"
+        )
+        return
+
+    items_emb = torch.tensor([v.vector for v in valid_vb])
+    items_bias = torch.tensor([v.bias for v in valid_vb])
+
+    new_vector_bias = train_new_user_vector(valid_ratings, items_emb, items_bias, global_bias, verbose=True)
+    logger.info(f"writing new vector_bias for user {user_id}")
+    await write_user_vector_bias(pool, new_vector_bias, user_id)

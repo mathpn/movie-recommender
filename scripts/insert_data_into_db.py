@@ -159,6 +159,8 @@ async def main():
         if len(batch) >= 1024:
             await insert_users(pool, batch)
             batch = []
+    if batch:
+        await insert_users(pool, batch)
 
 
 if __name__ == "__main__":

@@ -122,7 +122,7 @@ async def write_bulk_movie_vector_bias(pool: asyncpg.Pool, chunk: list[tuple[Vec
 async def get_movie_vector_bias(pool: asyncpg.Pool, movie_id: int) -> Optional[VectorBias]:
     async with pool.acquire() as connection:
         row = await connection.fetchrow(
-            "SELECT vector, bias FROM movies WHERE user_id = $1", movie_id
+            "SELECT vector, bias FROM movies WHERE movie_id = $1", movie_id
         )
     vector = row.get("vector")
     bias = row.get("bias")
@@ -197,6 +197,23 @@ async def get_user_movie_rating(pool: asyncpg.Pool, user_id: int, movie_id: int)
             "SELECT rating FROM ratings WHERE user_id = $1 AND movie_id = $2", user_id, movie_id
         )
 
+async def get_user_ratings(pool: asyncpg.Pool, user_id: int) -> Optional[list[Rating]]:
+    async with pool.acquire() as connection:
+        ratings = await connection.fetch(
+            "SELECT user_id, movie_id, rating, rating_timestamp FROM ratings WHERE user_id = $1", user_id
+        )
+    if not ratings:
+        return None
+    return [
+        Rating(
+            user_id=r["user_id"],
+            movie_id=r["movie_id"],
+            rating=r["rating"],
+            timestamp=r["rating_timestamp"]
+        )
+        for r in ratings
+    ]
+
 
 async def get_all_ratings(pool: asyncpg.Pool):
     async with pool.acquire() as connection:
@@ -237,12 +254,12 @@ async def get_user_id(pool: asyncpg.Pool, username: str) -> Optional[int]:
         return await connection.fetchval("SELECT user_id FROM users WHERE username = $1", username)
 
 
-async def write_user_vector_bias(pool: asyncpg.Pool, vector_biases: VectorBias, user_id: int):
+async def write_user_vector_bias(pool: asyncpg.Pool, vector_bias: VectorBias, user_id: int):
     async with pool.acquire() as connection:
         await connection.execute(
             "UPDATE users SET vector = $1, bias = $2 WHERE user_id = $3",
-            vector_biases.vector,
-            vector_biases.bias,
+            vector_bias.vector,
+            vector_bias.bias,
             user_id,
         )
 
@@ -284,3 +301,8 @@ async def update_global_bias(pool: asyncpg.Pool, bias: float) -> None:
             await connection.execute("INSERT INTO global (bias) VALUES ($1)", 1.0)
 
         await connection.execute("UPDATE global SET bias = $1", bias)
+
+
+async def get_global_bias(pool) -> Optional[float]:
+    async with pool.acquire() as connection:
+        return await connection.fetchval("SELECT bias FROM global")

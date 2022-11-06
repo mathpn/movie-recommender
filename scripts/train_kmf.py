@@ -23,7 +23,7 @@ async def main():
     parser.add_argument(
         "--proportion",
         type=float,
-        default=0.1,
+        default=1.0,
         help="proportion of rating data to use for training",
     )
     parser.add_argument("--test-split", type=float, default=0.8)
