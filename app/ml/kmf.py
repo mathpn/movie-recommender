@@ -62,8 +62,8 @@ async def write_model_data(embedding, biases, mapping, callback, pool, chunk_siz
     for user, i in mapping.items():
         vector = embedding.weight[i, :].detach().cpu().tolist()
         bias = biases[i].detach().cpu().item()
-        vector_bias = VectorBias(vector, bias)
-        chunk.append((vector_bias, user))
+        vector_bias = VectorBias(vector, bias, user)
+        chunk.append(vector_bias)
         if len(chunk) >= chunk_size or i == len(mapping) - 1:
             await callback(pool, chunk)
             chunk = []
@@ -164,7 +164,13 @@ async def run_train_pipeline(
     """Run a full training and store vectors in the database."""
     dataset, users_2_ids, movies_2_ids = await fetch_data(pool, proportion)
     model = train_kmf_model(
-        dataset, users_2_ids, movies_2_ids, emb_dim, test_size=test_split, alpha=alpha, verbose=verbose
+        dataset,
+        users_2_ids,
+        movies_2_ids,
+        emb_dim,
+        test_size=test_split,
+        alpha=alpha,
+        verbose=verbose,
     )
     logger.info("finished training new KMF model, writing new data to database")
 
@@ -191,6 +197,7 @@ async def run_train_pipeline(
 
 
 def train_new_user_vector(
+    user_id: int,
     ratings: list[Rating],
     items_emb: torch.Tensor,
     items_bias: torch.Tensor,
@@ -214,7 +221,9 @@ def train_new_user_vector(
     for i in range(steps):
         user_optim.zero_grad()
     
-        pred = 5 * torch.sigmoid(global_bias + new_user_bias + items_bias + (items_emb * new_user_emb).sum(1))
+        pred = 5 * torch.sigmoid(
+            global_bias + new_user_bias + items_bias + (items_emb * new_user_emb).sum(1)
+        )
         mse_loss = mse(new_ratings, pred)
         if verbose and (i % 5 == 0 or (i + 1) == steps):
             logger.info(f"loss = {float(mse_loss):.2f}")
@@ -222,7 +231,11 @@ def train_new_user_vector(
         loss = mse_loss * len(new_ratings) + l2_loss
         loss.backward()
         user_optim.step()
-    return VectorBias(vector=new_user_emb.detach().tolist(), bias=new_user_bias.detach().item())
+    return VectorBias(
+        vector=new_user_emb.detach().tolist(),
+        bias=new_user_bias.detach().item(),
+        entry_id=user_id,
+    )
 
 
 async def online_user_pipeline(pool: asyncpg.Pool, user_id: int) -> None:
@@ -255,6 +268,8 @@ async def online_user_pipeline(pool: asyncpg.Pool, user_id: int) -> None:
     items_emb = torch.tensor([v.vector for v in valid_vb])
     items_bias = torch.tensor([v.bias for v in valid_vb])
 
-    new_vector_bias = train_new_user_vector(valid_ratings, items_emb, items_bias, global_bias, verbose=True)
+    new_vector_bias = train_new_user_vector(
+        user_id, valid_ratings, items_emb, items_bias, global_bias, verbose=True
+    )
     logger.info(f"writing new vector_bias for user {user_id}")
-    await write_user_vector_bias(pool, new_vector_bias, user_id)
+    await write_user_vector_bias(pool, new_vector_bias)

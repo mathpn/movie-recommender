@@ -30,6 +30,7 @@ class Rating(NamedTuple):
 class VectorBias(NamedTuple):
     vector: list[float]
     bias: float
+    entry_id: int
 
 
 class KeywordFields(NamedTuple):

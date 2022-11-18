@@ -100,19 +100,19 @@ async def get_keyword_searcher_fields(pool: asyncpg.Pool) -> list[KeywordFields]
     ]
 
 
-async def write_movie_vector_bias(pool: asyncpg.Pool, vector_biases: VectorBias, movie_id: int):
+async def write_movie_vector_bias(pool: asyncpg.Pool, vector_bias: VectorBias):
     async with pool.acquire() as connection:
         await connection.execute(
             "UPDATE movies SET vector = $1, bias = $2 WHERE movie_id = $3",
-            vector_biases.vector,
-            vector_biases.bias,
-            movie_id,
+            vector_bias.vector,
+            vector_bias.bias,
+            vector_bias.entry_id,
         )
 
 
-async def write_bulk_movie_vector_bias(pool: asyncpg.Pool, chunk: list[tuple[VectorBias, int]]):
+async def write_bulk_movie_vector_bias(pool: asyncpg.Pool, chunk: list[VectorBias]):
     async with pool.acquire() as connection:
-        row_generator = ((x[0].vector, x[0].bias, x[1]) for x in chunk)
+        row_generator = ((x.vector, x.bias, x.entry_id) for x in chunk)
         await connection.executemany(
             "UPDATE movies SET vector = $1, bias = $2 WHERE movie_id = $3",
             row_generator
@@ -254,19 +254,19 @@ async def get_user_id(pool: asyncpg.Pool, username: str) -> Optional[int]:
         return await connection.fetchval("SELECT user_id FROM users WHERE username = $1", username)
 
 
-async def write_user_vector_bias(pool: asyncpg.Pool, vector_bias: VectorBias, user_id: int):
+async def write_user_vector_bias(pool: asyncpg.Pool, vector_bias: VectorBias):
     async with pool.acquire() as connection:
         await connection.execute(
             "UPDATE users SET vector = $1, bias = $2 WHERE user_id = $3",
             vector_bias.vector,
             vector_bias.bias,
-            user_id,
+            vector_bias.entry_id,
         )
 
 
-async def write_bulk_user_vector_bias(pool: asyncpg.Pool, chunk: list[tuple[VectorBias, int]]):
+async def write_bulk_user_vector_bias(pool: asyncpg.Pool, chunk: list[VectorBias]):
     async with pool.acquire() as connection:
-        row_generator = ((x[0].vector, x[0].bias, x[1]) for x in chunk)
+        row_generator = ((x.vector, x.bias, x.entry_id) for x in chunk)
         await connection.executemany(
             "UPDATE users SET vector = $1, bias = $2 WHERE user_id = $3", row_generator
         )
