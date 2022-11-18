@@ -128,7 +128,16 @@ async def get_movie_vector_bias(pool: asyncpg.Pool, movie_id: int) -> Optional[V
     bias = row.get("bias")
     if vector is None or bias is None:
         return None
-    return VectorBias(vector=vector, bias=bias)
+    return VectorBias(vector=vector, bias=bias, entry_id=movie_id)
+
+
+async def get_all_movie_vector_bias(pool: asyncpg.Pool):
+    async with pool.acquire() as connection:
+        async with connection.transaction():
+            async for row in connection.cursor(
+                "SELECT movie_id, vector, bias FROM movies WHERE vector IS NOT NULL"
+            ):
+                yield VectorBias(vector=row["vector"], bias=row["bias"], entry_id=row["movie_id"])
 
 
 async def delete_all_movie_vector_bias(pool: asyncpg.Pool) -> None:
@@ -281,7 +290,16 @@ async def get_user_vector_bias(pool: asyncpg.Pool, user_id: int) -> Optional[Vec
     bias = row.get("bias")
     if vector is None or bias is None:
         return None
-    return VectorBias(vector=vector, bias=bias)
+    return VectorBias(vector=vector, bias=bias, entry_id=user_id)
+
+
+async def get_all_user_vector_bias(pool: asyncpg.Pool):
+    async with pool.acquire() as connection:
+        async with connection.transaction():
+            async for row in connection.cursor(
+                "SELECT user_id, vector, bias FROM users WHERE vector IS NOT NULL"
+            ):
+                yield VectorBias(vector=row["vector"], bias=row["bias"], entry_id=row["user_id"])
 
 
 async def delete_all_user_vector_bias(pool: asyncpg.Pool) -> None:

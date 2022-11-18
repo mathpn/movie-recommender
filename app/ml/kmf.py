@@ -13,7 +13,9 @@ from torch import nn
 from torch.utils.data import DataLoader
 
 from app.db.postgres import (delete_all_movie_vector_bias,
-                             delete_all_user_vector_bias, get_global_bias,
+                             delete_all_user_vector_bias,
+                             get_all_movie_vector_bias,
+                             get_all_user_vector_bias, get_global_bias,
                              get_movie_vector_bias, get_user_ratings,
                              sample_ratings, update_global_bias,
                              write_bulk_movie_vector_bias,
@@ -54,6 +56,79 @@ class KMF(nn.Module):
             self.global_bias + items_bias + users_bias + (items_emb * users_emb).sum(1)
         )
         return pred_score, users_emb, items_emb, users_bias, items_bias
+
+
+class KMFInferece:
+    def __init__(
+        self,
+        user_emb: dict[int, np.ndarray],
+        item_emb: dict[int, np.ndarray],
+        user_bias: dict[int, float],
+        item_bias: dict[int, float],
+        global_bias: float,
+        max_score: float = 5.0
+    ):
+        self.user_emb = user_emb
+        self.item_emb = item_emb
+        self.user_bias = user_bias
+        self.item_bias = item_bias
+        self.global_bias = global_bias
+        self.max_score = max_score
+
+    def __call__(self, user, movie) -> float:
+        user_emb = self.user_emb[user]
+        item_emb = self.item_emb[movie]
+        user_bias = self.user_bias[user]
+        item_bias = self.item_bias[movie]
+        pred_score = self.max_score * _sigmoid(
+            self.global_bias + item_bias + user_bias + (item_emb * user_emb).sum(axis=0)
+        )
+        return pred_score
+
+
+def _sigmoid(x):
+    return 1 / (1 + np.exp(-x))
+
+
+async def _build_vector_bias_dicts(callback) -> tuple[dict[int, np.ndarray], dict[int, float]]:
+    vector_dict = {}
+    bias_dict = {}
+    async for vector_bias in callback():
+        entry_id = vector_bias.entry_id
+        vector_dict[entry_id] = np.array(vector_bias.vector)
+        bias_dict[entry_id] = vector_bias.bias
+    return vector_dict, bias_dict
+
+
+async def create_kmf_inference(pool) -> Optional[KMFInferece]:
+    user_emb, user_bias = await _build_vector_bias_dicts(
+        lambda: get_all_movie_vector_bias(pool)
+    )
+    movie_emb, movie_bias = await _build_vector_bias_dicts(
+        lambda: get_all_user_vector_bias(pool)
+    )
+    global_bias = await get_global_bias(pool)
+
+    if len(user_emb) == 0:
+        logger.error("no user vectors are available, it's not possible to build inference object")
+        return None
+
+    if len(movie_emb) == 0:
+        logger.error("no movie vectors are available, it's not possible to build inference object")
+        return None
+
+    if global_bias is None:
+        logger.error("global bias not found, it's not possible to create inference object")
+        return None
+
+    kmf_inference = KMFInferece(
+        user_emb,
+        movie_emb,
+        user_bias,
+        movie_bias,
+        global_bias,
+    )
+    return kmf_inference
 
 
 @torch.no_grad()
