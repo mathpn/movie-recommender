@@ -4,6 +4,7 @@ Kernel Matrix Factorization (KMF) model.
 
 #pylint: disable=no-member
 import asyncio
+from typing import Optional
 
 import asyncpg
 import numpy as np
@@ -75,11 +76,26 @@ class KMFInferece:
         self.global_bias = global_bias
         self.max_score = max_score
 
-    def __call__(self, user, movie) -> float:
-        user_emb = self.user_emb[user]
-        item_emb = self.item_emb[movie]
-        user_bias = self.user_bias[user]
-        item_bias = self.item_bias[movie]
+    @property
+    def movie_ids(self) -> list[int]:
+        return list(self.item_bias.keys())
+
+    def __call__(self, user_id: int, allowed_movies: list[int]) -> np.ndarray:
+        user_emb = self.user_emb[user_id]
+        user_emb = user_emb.reshape((1, -1))
+        item_emb = np.stack([self.item_emb[movie] for movie in allowed_movies], axis=0)
+        user_bias = self.user_bias[user_id]
+        item_bias = np.stack([self.item_bias[movie] for movie in allowed_movies], axis=0)
+        pred_score = self.max_score * _sigmoid(
+            self.global_bias + item_bias + user_bias + (item_emb * user_emb).sum(axis=1)
+        )
+        return pred_score
+
+    def predict_movie(self, user_id: int, movie_id: int) -> float:
+        user_emb = self.user_emb[user_id]
+        item_emb = self.item_emb[movie_id]
+        user_bias = self.user_bias[user_id]
+        item_bias = self.item_bias[movie_id]
         pred_score = self.max_score * _sigmoid(
             self.global_bias + item_bias + user_bias + (item_emb * user_emb).sum(axis=0)
         )

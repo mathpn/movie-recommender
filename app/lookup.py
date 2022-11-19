@@ -1,5 +1,5 @@
 """
-Classes and data structures used to search for similar movies.
+Classes, functions and data structures used to search for similar movies.
 """
 
 from typing import Optional
@@ -9,6 +9,7 @@ import scipy.sparse
 from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
+from app.ml.kmf import KMFInferece
 from app.models import KeywordFields
 
 
@@ -78,7 +79,7 @@ class KeywordSearcher:
         return [allowed_movie_ids[idx] for idx in top_idx], [sim[idx] for idx in top_idx]
 
 
-def remove_spaces(string) -> str:
+def _remove_spaces(string) -> str:
     if string is None:
         return ""
     return "_".join(string.lower().split(" "))
@@ -91,11 +92,24 @@ def create_keyword_searcher(keyword_fields: list[KeywordFields]) -> KeywordSearc
     for keywords in keyword_fields:
         movie_ids.append(keywords.movie_id)
         soup = [
-            *map(remove_spaces, keywords.keywords),
-            *map(remove_spaces, keywords.cast),
-            *map(remove_spaces, keywords.genres),
-            remove_spaces(keywords.director),
+            *map(_remove_spaces, keywords.keywords),
+            *map(_remove_spaces, keywords.cast),
+            *map(_remove_spaces, keywords.genres),
+            _remove_spaces(keywords.director),
         ]
         soups.append(" ".join(soup))
     sparse_keywords = count.fit_transform(soups)
     return KeywordSearcher(movie_ids, sparse_keywords)
+
+
+def collaborative_search(
+    kmf_inference: KMFInferece,
+    user_id: int,
+    k: int,
+    allowed_movies: Optional[list[int]] = None
+) -> tuple[list[int], list[float]]:
+    """Search recommended movies for a given user."""
+    allowed_movies = allowed_movies if allowed_movies is not None else kmf_inference.movie_ids
+    scores = kmf_inference(user_id, allowed_movies)
+    top_idx = np.argsort(-scores)[:k]
+    return [allowed_movies[idx] for idx in top_idx], [scores[idx] for idx in top_idx]
