@@ -111,5 +111,9 @@ def collaborative_search(
     """Search recommended movies for a given user."""
     allowed_movies = allowed_movies if allowed_movies is not None else kmf_inference.movie_ids
     scores = kmf_inference(user_id, allowed_movies)
+
+    if scores is None:
+        return [], []
+
     top_idx = np.argsort(-scores)[:k]
     return [allowed_movies[idx] for idx in top_idx], [scores[idx] for idx in top_idx]

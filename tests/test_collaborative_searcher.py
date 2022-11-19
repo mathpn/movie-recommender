@@ -2,8 +2,8 @@ import random
 
 import numpy as np
 
-from app.ml.kmf import KMFInferece
 from app.lookup import collaborative_search
+from app.ml.kmf import KMFInferece
 
 
 def _create_fake_embedding(length: int = 1000) -> dict[int, np.ndarray]:
@@ -39,6 +39,22 @@ def test_kmf_perfect_correlation():
         assert pred[0] >= 0.9999
 
 
+def test_kmf_inference_bad_userid():
+    emb = _create_fake_embedding()
+    bias = _create_fake_bias()
+    kmf_inf = KMFInferece(emb, emb, bias, bias, global_bias=0, max_score=5)
+    pred = kmf_inf(99999, list(range(1000)))
+    assert pred is None
+
+
+def test_kmf_inference_bad_allowed_movies():
+    emb = _create_fake_embedding()
+    bias = _create_fake_bias()
+    kmf_inf = KMFInferece(emb, emb, bias, bias, global_bias=0, max_score=5)
+    pred = kmf_inf(1, [99999])
+    assert pred is None
+
+
 def test_kmf_predict_movie():
     emb = _create_fake_embedding()
     bias = _create_fake_bias()
@@ -46,6 +62,22 @@ def test_kmf_predict_movie():
     pred = kmf_inf.predict_movie(10, 42)
     assert isinstance(pred, float)
     assert 0 <= pred <= 5
+
+
+def test_kmf_predict_movie_bad_userid():
+    emb = _create_fake_embedding()
+    bias = _create_fake_bias()
+    kmf_inf = KMFInferece(emb, emb, bias, bias, global_bias=1.0, max_score=5)
+    pred = kmf_inf.predict_movie(99999, 42)
+    assert pred is None
+
+
+def test_kmf_predict_movie_bad_movieid():
+    emb = _create_fake_embedding()
+    bias = _create_fake_bias()
+    kmf_inf = KMFInferece(emb, emb, bias, bias, global_bias=1.0, max_score=5)
+    pred = kmf_inf.predict_movie(10, 99999)
+    assert pred is None
 
 
 def test_collaborative_search():

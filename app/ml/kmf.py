@@ -75,12 +75,21 @@ class KMFInferece:
         self.item_bias = item_bias
         self.global_bias = global_bias
         self.max_score = max_score
+        self.users = set(user_bias.keys())
+        self.movies = set(item_bias.keys())
 
     @property
     def movie_ids(self) -> list[int]:
         return list(self.item_bias.keys())
 
-    def __call__(self, user_id: int, allowed_movies: list[int]) -> np.ndarray:
+    def __call__(self, user_id: int, allowed_movies: list[int]) -> Optional[np.ndarray]:
+        if user_id not in self.users:
+            return None
+
+        allowed_movies = list(set(allowed_movies) & self.movies)
+        if not allowed_movies:
+            return None
+
         user_emb = self.user_emb[user_id]
         user_emb = user_emb.reshape((1, -1))
         item_emb = np.stack([self.item_emb[movie] for movie in allowed_movies], axis=0)
@@ -91,7 +100,10 @@ class KMFInferece:
         )
         return pred_score
 
-    def predict_movie(self, user_id: int, movie_id: int) -> float:
+    def predict_movie(self, user_id: int, movie_id: int) -> Optional[float]:
+        if user_id not in self.users or movie_id not in self.movies:
+            return None
+
         user_emb = self.user_emb[user_id]
         item_emb = self.item_emb[movie_id]
         user_bias = self.user_bias[user_id]
@@ -116,7 +128,7 @@ async def _build_vector_bias_dicts(callback) -> tuple[dict[int, np.ndarray], dic
     return vector_dict, bias_dict
 
 
-async def create_kmf_inference(pool) -> Optional[KMFInferece]:
+async def create_kmf_inference(pool: asyncpg.Pool) -> Optional[KMFInferece]:
     user_emb, user_bias = await _build_vector_bias_dicts(
         lambda: get_all_movie_vector_bias(pool)
     )
