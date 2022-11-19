@@ -9,6 +9,14 @@ def test_genre_searcher_match_self():
     assert result[0] == 2
 
 
+def test_genre_searcher_invalid_movie():
+    movie_ids = [1, 2, 3]
+    genres = [["foo", "bar"], ["foo", "ping"], ["ping", "pong"]]
+    searcher = create_genre_searcher(movie_ids, genres)
+    result = searcher.search_by_movie(999, k=1)
+    assert result is None
+
+
 def test_genre_searcher_match_two():
     movie_ids = [1, 2, 3]
     genres = [["foo", "bar"], ["foo", "ping"], ["ping", "pong"]]

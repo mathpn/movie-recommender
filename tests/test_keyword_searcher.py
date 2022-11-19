@@ -14,6 +14,14 @@ def test_keyword_searcher_match_order():
     assert sorted(scores, reverse=True) == list(scores)
 
 
+def test_keyword_searcher_invalid_movie():
+    searcher = create_keyword_searcher([MOVIE_1, MOVIE_2, MOVIE_3])
+    result = searcher.search_by_movie(999, k=3)
+    movie_idx, scores = result
+    assert movie_idx == []
+    assert scores == []
+
+
 def test_keyword_searcher_k():
     searcher = create_keyword_searcher([MOVIE_1, MOVIE_2, MOVIE_3])
     result = searcher.search_by_movie(2, k=2)

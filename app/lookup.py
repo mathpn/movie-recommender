@@ -26,10 +26,11 @@ class GenreSearcher:
         self.movie2genres = dict(zip(movie_ids, list(encoded_genres)))
         self.n_genres = n_genres
 
-    def search_by_movie(self, movie_id: int, k: Optional[int] = None) -> list[int]:
+    def search_by_movie(self, movie_id: int, k: Optional[int] = None) -> Optional[list[int]]:
         movie_genres = self.movie2genres.get(movie_id)
         if movie_genres is None:
-            raise ValueError("movie ID not fonud")
+            return None
+
         dists = _hamming_distance(movie_genres, self.encoded_genres, self.n_genres)
         top_idx = np.argsort(dists)
         # keep only movies with at least one common genre
@@ -64,7 +65,11 @@ class KeywordSearcher:
     def search_by_movie(
         self, movie_id: int, k: int, allowed_movie_ids: Optional[list[int]] = None
     ) -> tuple[list[int], list[float]]:
-        movie_sparse_row = self.sparse_keywords[self.movie_2_internal_id[movie_id], :]
+        internal_id = self.movie_2_internal_id.get(movie_id)
+        if internal_id is None:
+            return [], []
+
+        movie_sparse_row = self.sparse_keywords[internal_id, :]
         if allowed_movie_ids is not None:
             allowed_movies = np.array([self.movie_2_internal_id[idx] for idx in allowed_movie_ids])
             allowed_movie_rows = self.sparse_keywords[allowed_movies, :]
