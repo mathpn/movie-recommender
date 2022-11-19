@@ -7,10 +7,12 @@ from fastapi.concurrency import run_in_threadpool
 from starlette.responses import JSONResponse
 
 from app.db.postgres import (get_all_movies_genres,
-                             get_keyword_searcher_fields, insert_user)
+                             get_keyword_searcher_fields, get_user_id,
+                             insert_user)
 from app.logger import logger
-from app.lookup import (GenreSearcher, KeywordSearcher, create_genre_searcher,
-                        create_keyword_searcher)
+from app.lookup import (GenreSearcher, KeywordSearcher, collaborative_search,
+                        create_genre_searcher, create_keyword_searcher)
+from app.ml.kmf import KMFInferece, create_kmf_inference
 
 # from fastapi_cprofile.profiler import CProfileMiddleware
 
@@ -28,6 +30,7 @@ async def startup_event():
     )
     keyword_fields = await get_keyword_searcher_fields(app.state.pool)
     app.state.keyword_searcher = create_keyword_searcher(keyword_fields)
+    app.state.kmf_inference = await create_kmf_inference(app.state.pool)
 
 
 @app.post("/create_user")
@@ -46,23 +49,46 @@ async def create_user(request: Request, username: str) -> JSONResponse:
 
 
 @app.get("/recommend")
-async def recommend(request: Request, username: str, movie_id: int) -> JSONResponse:
+async def recommend(
+    request: Request,
+    username: str,
+    movie_id: int = Query(ge=0),
+    k: int = Query(ge=1, le=50),
+) -> JSONResponse:
     init = perf_counter()
+    user_id = await get_user_id(app.state.pool, username)
+    if user_id is None:
+        return JSONResponse({"error": "username not found"}, 400)
+
     genre_searcher: GenreSearcher = request.app.state.genre_searcher
     keyword_searcher: KeywordSearcher = request.app.state.keyword_searcher
     recos_by_genre = genre_searcher.search_by_movie(movie_id=movie_id, k=2000)
-    logger.info(len(recos_by_genre))
+
+    # keyword-based recommendations
     recos_by_kw, _ = keyword_searcher.search_by_movie(
-        movie_id=movie_id, k=5, allowed_movie_ids=recos_by_genre
+        movie_id=movie_id, k=k, allowed_movie_ids=recos_by_genre
     )
+
+    # user-based recommendations
+    kmf_inference: KMFInferece = request.app.state.kmf_inference
+    recos_by_user, _ = collaborative_search(
+        kmf_inference, user_id, k=k, allowed_movies=recos_by_genre
+    )
+    recos_by_user = [reco for reco in recos_by_user if reco not in set(recos_by_kw)]
+
+    n_user_recos = min(k // 2, len(recos_by_user)) + max(0, k // 2 - len(recos_by_kw))
+    merged_recos = recos_by_kw[:(k - n_user_recos)] + recos_by_user[:n_user_recos]
     end = perf_counter()
-    logger.info(f"{(end - init) * 1000:.2f} ms")
-    return JSONResponse(recos_by_kw)
+    logger.info(f"found {len(merged_recos)} recommendations for {username} in {(end - init) * 1000:.2f} ms")
+    return JSONResponse(merged_recos)
 
 
 @app.post("/rate")
 async def rate_movie(
-    request: Request, username: str, movie_id: int, rating: float = Query(ge=0.0, le=5.0)
+    request: Request,
+    username: str,
+    movie_id: int = Query(ge=0),
+    rating: float = Query(ge=0.0, le=5.0),
 ) -> JSONResponse:
     # TODO
     raise NotImplementedError()
