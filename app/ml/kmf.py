@@ -9,6 +9,7 @@ from typing import Optional
 import asyncpg
 import numpy as np
 import torch
+from fastapi.concurrency import run_in_threadpool
 from sklearn.model_selection import train_test_split
 from torch import nn
 from torch.utils.data import DataLoader
@@ -341,7 +342,7 @@ def train_new_user_vector(
     )
 
 
-async def online_user_pipeline(pool: asyncpg.Pool, user_id: int) -> None:
+async def online_user_pipeline(pool: asyncpg.Pool, user_id: int, verbose: bool = False) -> None:
     ratings = await get_user_ratings(pool, user_id)
     if ratings is None:
         logger.warning(f"online user pipeline: user ID {user_id} not found, interrupting pipeline")
@@ -371,8 +372,27 @@ async def online_user_pipeline(pool: asyncpg.Pool, user_id: int) -> None:
     items_emb = torch.tensor([v.vector for v in valid_vb])
     items_bias = torch.tensor([v.bias for v in valid_vb])
 
-    new_vector_bias = train_new_user_vector(
-        user_id, valid_ratings, items_emb, items_bias, global_bias, verbose=True
+    new_vector_bias = await run_in_threadpool(
+        train_new_user_vector,
+        user_id,
+        valid_ratings,
+        items_emb,
+        items_bias,
+        global_bias,
+        verbose=verbose,
     )
     logger.info(f"writing new vector_bias for user {user_id}")
     await write_user_vector_bias(pool, new_vector_bias)
+
+
+async def main():
+    POSTGRES_URI = "postgresql://postgres:postgres@localhost:5401/movies"
+    import asyncpg
+    pool = await asyncpg.create_pool(POSTGRES_URI)
+    from app.ml.kmf import KMFInferece, create_kmf_inference
+    kmf = await create_kmf_inference(pool)
+    return kmf
+
+if __name__ == '__main__':
+    kmf = asyncio.run(main())
+    print(kmf)

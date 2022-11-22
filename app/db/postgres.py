@@ -83,6 +83,11 @@ async def get_all_movies_genres(pool: asyncpg.Pool) -> dict[str, Any]:
     return {"movie_ids": movie_ids, "genres": genres}
 
 
+async def is_movie_present(pool: asyncpg.Pool, movie_id: int) -> bool:
+    async with pool.acquire() as connection:
+        return bool(await connection.fetchval("SELECT 1 FROM movies WHERE movie_id=$1", movie_id))
+
+
 async def get_keyword_searcher_fields(pool: asyncpg.Pool) -> list[KeywordFields]:
     async with pool.acquire() as connection:
         rows = await connection.fetch(

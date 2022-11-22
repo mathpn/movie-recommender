@@ -1,18 +1,20 @@
 import os
-from time import perf_counter
+from collections import defaultdict
+from datetime import datetime
 
 import asyncpg
-from fastapi import FastAPI, Query, Request
-from fastapi.concurrency import run_in_threadpool
+from fastapi import BackgroundTasks, FastAPI, Query, Request
 from starlette.responses import JSONResponse
 
 from app.db.postgres import (get_all_movies_genres,
                              get_keyword_searcher_fields, get_user_id,
-                             insert_user)
+                             insert_movie_rating, insert_user,
+                             is_movie_present)
 from app.logger import logger
 from app.lookup import (GenreSearcher, KeywordSearcher, collaborative_search,
                         create_genre_searcher, create_keyword_searcher)
-from app.ml.kmf import KMFInferece, create_kmf_inference
+from app.ml.kmf import KMFInferece, create_kmf_inference, online_user_pipeline
+from app.models import Rating
 from app.utils import timed
 
 # from fastapi_cprofile.profiler import CProfileMiddleware
@@ -33,7 +35,9 @@ async def startup_event():
     keyword_fields = await get_keyword_searcher_fields(app.state.pool)
     app.state.keyword_searcher = create_keyword_searcher(keyword_fields)
     app.state.kmf_inference = await create_kmf_inference(app.state.pool)
-
+    app.state.new_ratings = defaultdict(int)
+    app.state.verbose_bg = bool(os.environ.get("VERBOSE")) or False
+    app.state.online_threshold = os.environ.get("ONLINE_THRESHOLD") or 5
 
 @app.post("/create_user")
 @timed
@@ -81,7 +85,6 @@ async def recommend(
 
     n_user_recos = min(k // 2, len(recos_by_user)) + max(0, k // 2 - len(recos_by_kw))
     merged_recos = recos_by_kw[:(k - n_user_recos)] + recos_by_user[:n_user_recos]
-    end = perf_counter()
     logger.info(f"found {len(merged_recos)} recommendations for {username}")
     return JSONResponse(merged_recos)
 
@@ -90,9 +93,38 @@ async def recommend(
 @timed
 async def rate_movie(
     request: Request,
+    bg_tasks: BackgroundTasks,
     username: str,
     movie_id: int = Query(ge=0),
     rating: float = Query(ge=0.0, le=5.0),
 ) -> JSONResponse:
-    # TODO
-    raise NotImplementedError()
+    pool = request.app.state.pool
+    if not await is_movie_present(pool, movie_id):
+        return JSONResponse({"error": f"movie ID {movie_id} not found"}, status_code=400)
+
+    user_id = await get_user_id(app.state.pool, username)
+    if user_id is None:
+        return JSONResponse({"error": "username not found"}, 400)
+
+    rating_obj = Rating(
+        user_id,
+        movie_id=movie_id,
+        rating=int(10 * rating),
+        timestamp=datetime.now()
+    )
+    change_count = request.app.state.new_ratings
+    try:
+        await insert_movie_rating(pool, rating_obj)
+        change_count[user_id] += 1
+        logger.info(f"inserted new rating of user {user_id} - change count = {change_count[user_id]}")
+    except Exception as exc:
+        logger.error(f"failed to insert rating {rating_obj}: {exc}")
+        return JSONResponse({"error": "unkown internal exception"}, status_code=500)
+
+    if change_count[user_id] >= request.app.state.online_threshold:
+        logger.info(f"starting online training for user ID {user_id}")
+        verbose_bg = request.app.state.verbose_bg
+        change_count.pop(user_id, None)
+        bg_tasks.add_task(online_user_pipeline, pool, user_id, verbose=verbose_bg)
+
+    return JSONResponse({"status": "ok"}, status_code=200)
