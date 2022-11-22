@@ -13,6 +13,7 @@ from app.logger import logger
 from app.lookup import (GenreSearcher, KeywordSearcher, collaborative_search,
                         create_genre_searcher, create_keyword_searcher)
 from app.ml.kmf import KMFInferece, create_kmf_inference
+from app.utils import timed
 
 # from fastapi_cprofile.profiler import CProfileMiddleware
 
@@ -22,6 +23,7 @@ app = FastAPI()
 
 
 @app.on_event("startup")
+@timed
 async def startup_event():
     app.state.pool = await asyncpg.create_pool(os.environ["POSTGRES_URI"])
     movies_genres = await get_all_movies_genres(app.state.pool)
@@ -34,6 +36,7 @@ async def startup_event():
 
 
 @app.post("/create_user")
+@timed
 async def create_user(request: Request, username: str) -> JSONResponse:
     try:
         await insert_user(request.app.state.pool, username)
@@ -49,13 +52,13 @@ async def create_user(request: Request, username: str) -> JSONResponse:
 
 
 @app.get("/recommend")
+@timed
 async def recommend(
     request: Request,
     username: str,
     movie_id: int = Query(ge=0),
     k: int = Query(ge=1, le=50),
 ) -> JSONResponse:
-    init = perf_counter()
     user_id = await get_user_id(app.state.pool, username)
     if user_id is None:
         return JSONResponse({"error": "username not found"}, 400)
@@ -79,11 +82,12 @@ async def recommend(
     n_user_recos = min(k // 2, len(recos_by_user)) + max(0, k // 2 - len(recos_by_kw))
     merged_recos = recos_by_kw[:(k - n_user_recos)] + recos_by_user[:n_user_recos]
     end = perf_counter()
-    logger.info(f"found {len(merged_recos)} recommendations for {username} in {(end - init) * 1000:.2f} ms")
+    logger.info(f"found {len(merged_recos)} recommendations for {username}")
     return JSONResponse(merged_recos)
 
 
 @app.post("/rate")
+@timed
 async def rate_movie(
     request: Request,
     username: str,
