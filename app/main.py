@@ -4,6 +4,8 @@ from datetime import datetime
 
 import asyncpg
 from fastapi import BackgroundTasks, FastAPI, Query, Request
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 from starlette.responses import JSONResponse
 
 from app.db.postgres import (get_all_movies_genres,
@@ -21,6 +23,9 @@ from app.utils import timed
 
 
 app = FastAPI()
+app.mount("/static", StaticFiles(directory="./templates"), name="static")
+
+templates = Jinja2Templates(directory="templates")
 # app.add_middleware(CProfileMiddleware, enable=True, print_each_request=True, strip_dirs=False, sort_by='tottime')
 
 
@@ -128,3 +133,16 @@ async def rate_movie(
         bg_tasks.add_task(online_user_pipeline, pool, user_id, verbose=verbose_bg)
 
     return JSONResponse({"status": "ok"}, status_code=200)
+
+
+@app.get("/")
+async def landing(request: Request):
+    return templates.TemplateResponse("search.html", {"request": request})
+
+
+@app.get("/search")
+async def search(request: Request, movie_name: str):
+    # TODO finish endpoint
+    logger.info(movie_name)
+    movie_names = ["foo", "bar", "ping", "pong"]
+    return templates.TemplateResponse("search_results.html", {"request": request, "movies": movie_names})
