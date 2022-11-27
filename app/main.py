@@ -6,7 +6,8 @@ import asyncpg
 from fastapi import BackgroundTasks, FastAPI, Query, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, RedirectResponse
+from pydantic import BaseModel
 
 from app.db.postgres import (get_all_movies_genres,
                              get_keyword_searcher_fields, get_user_id,
@@ -60,6 +61,7 @@ async def create_user(request: Request, username: str) -> JSONResponse:
         return JSONResponse(msg, status_code=500)
 
 
+# TODO somehow store username in session
 @app.get("/recommend")
 @timed
 async def recommend(
@@ -94,6 +96,7 @@ async def recommend(
     return JSONResponse(merged_recos)
 
 
+# TODO somehow store username in session
 @app.post("/rate")
 @timed
 async def rate_movie(
@@ -137,6 +140,11 @@ async def rate_movie(
 
 @app.get("/")
 async def landing(request: Request):
+    return RedirectResponse("/home")
+
+
+@app.get("/home")
+async def home(request: Request):
     return templates.TemplateResponse("search.html", {"request": request})
 
 
@@ -145,4 +153,17 @@ async def search(request: Request, movie_name: str):
     # TODO finish endpoint
     logger.info(movie_name)
     movie_names = ["foo", "bar", "ping", "pong"]
-    return templates.TemplateResponse("search_results.html", {"request": request, "movies": movie_names})
+    movies = list(enumerate(movie_names))
+    return templates.TemplateResponse("search_results.html", {"request": request, "movies": movies})
+
+
+# XXX remove
+@app.post("/fake_rate")
+async def fake_rate(request: Request, rating):
+    logger.info(f"rating {rating}")
+
+
+# XXX remove
+@app.get("/fake_reco")
+async def fake_reco(request: Request, movie_id: int):
+    logger.info(f"recommending for {movie_id}")

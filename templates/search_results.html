@@ -6,12 +6,60 @@
   <link rel="stylesheet" href="{{ url_for('static', path='/css/style.css') }}">
 </head>
 
+<script>
+    const doRecommend = (url, movie_id) => {
+        params = new URLSearchParams({"movie_id": movie_id});
+        url = url + "?" + params.toString();
+        fetch(url);
+    }
+
+    const doRate = (movie, movie_id) => {
+        console.log(movie);
+        form = document.querySelector("#" + movie);
+        rating = form.elements["rating"].value;
+        console.log(form);
+        params = new URLSearchParams({"movie_id": movie_id, "rating": rating});
+        url = "{{ url_for('fake_rate') }}" + "?" + params.toString();
+        fetch(url, {"method": "POST"});
+        return false;
+    }
+</script>
+
 <body>
+
+    <iframe name="no_reload" style="display:none;"></iframe>
     <div class="wrap">
+        <input type="button" onclick="location.href='{{url_for('home')}}'" value="Go back" />
         <ul>
-        {% for movie in movies %}
-            <li>{{ movie }}</li>
+        {% for movie_id, movie in movies %}
+            <li>
+                {{ movie }}
+                <div class="search">
+                    <form id="{{ movie }}" onsubmit="return doRate('{{ movie }}', '{{ movie_id }}');" target="no_reload">
+                        <input type="number" step="0.1" class="ratingTerm" name="rating" />
+                        <button type="submit">Rate</button>
+                    </form>
+                </div>
+                <input type="button" value="Recommend" onclick="doRecommend('{{ url_for('fake_reco') }}', '{{ movie_id }}');" />
+            </li>
         {% endfor %}
         </ul>
     </div>
+
+    <script>
+        console.log(document.querySelectorAll(".search"));
+        const email = document.getElementById("foo");
+
+        document.querySelectorAll(".search").forEach(item => {
+            item = item.querySelector("input");
+            item.addEventListener("input", (event) => {
+                if (item.value < 0 || item.value > 5) {
+                    item.setCustomValidity("Rating should be between 0 and 5")
+                    item.reportValidity();
+                } else {
+                    item.setCustomValidity("");
+                }
+            });
+        });
+    </script>
 </body>
