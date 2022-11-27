@@ -124,7 +124,7 @@ async def _build_vector_bias_dicts(callback) -> tuple[dict[int, np.ndarray], dic
     bias_dict = {}
     async for vector_bias in callback():
         entry_id = vector_bias.entry_id
-        vector_dict[entry_id] = np.array(vector_bias.vector)
+        vector_dict[entry_id] = np.array(vector_bias.vector).squeeze()
         bias_dict[entry_id] = vector_bias.bias
     return vector_dict, bias_dict
 

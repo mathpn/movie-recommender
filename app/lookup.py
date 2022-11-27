@@ -9,6 +9,8 @@ import scipy.sparse
 from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
+from app.db.postgres import get_movie_titles
+from app.logger import logger
 from app.ml.kmf import KMFInferece
 from app.models import KeywordFields
 
@@ -122,3 +124,35 @@ def collaborative_search(
 
     top_idx = np.argsort(-scores)[:k]
     return [allowed_movies[idx] for idx in top_idx], [scores[idx] for idx in top_idx]
+
+
+async def recommend(
+    movie_id: int,
+    user_id: int,
+    genre_searcher: GenreSearcher,
+    keyword_searcher: KeywordSearcher,
+    kmf_inference: KMFInferece,
+    k: int = 6,
+    pool=None,  # TODO remove
+) -> list[int]:
+    recos_by_genre = genre_searcher.search_by_movie(movie_id=movie_id, k=2000)
+
+    # keyword-based recommendations
+    recos_by_kw, _ = keyword_searcher.search_by_movie(
+        movie_id=movie_id, k=k, allowed_movie_ids=recos_by_genre
+    )
+
+    # user-based recommendations    
+    if kmf_inference is not None:
+        recos_by_user, _ = collaborative_search(
+            kmf_inference, user_id, k=k, allowed_movies=recos_by_genre
+        )
+        recos_by_user = [reco for reco in recos_by_user if reco not in set(recos_by_kw)]
+    else:
+        recos_by_user = []
+
+    logger.debug(f"{await get_movie_titles(pool, recos_by_kw) = }\n{await get_movie_titles(pool, recos_by_user) = }") # TODO remove
+    n_user_recos = min(k // 2, len(recos_by_user)) + max(0, k // 2 - len(recos_by_kw))
+    merged_recos = recos_by_kw[:(k - n_user_recos)] + recos_by_user[:n_user_recos]
+    logger.info(f"found {len(merged_recos)} recommendations for user {user_id}")
+    return merged_recos

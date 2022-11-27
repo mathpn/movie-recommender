@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en" >
+
+<head>
+  <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/font-awesome/4.4.0/css/font-awesome.min.css">
+  <link rel="stylesheet" href="{{ url_for('static', path='/css/style.css') }}">
+</head>
+
+<body>
+    
+    <iframe name="no_reload" style="display:none;"></iframe>
+    <div class="wrap">
+        <input type="button" onclick="location.href='{{url_for('home')}}'" value="Go to search" />
+        <input type="button" onclick="history.back()" value="Go back" />
+        <ul>
+        {% for movie_id, movie in movies %}
+            <li>
+                {{ movie }}
+            </li>
+        {% endfor %}
+        </ul>
+    </div>
+</body>

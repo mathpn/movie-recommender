@@ -7,10 +7,10 @@
 </head>
 
 <script>
-    const doRecommend = (url, movie_id) => {
+    const doRecommend = (movie_id) => {
+        url = "{{ url_for('recommend_html') }}"
         params = new URLSearchParams({"movie_id": movie_id});
-        url = url + "?" + params.toString();
-        fetch(url);
+        return url + "?" + params.toString();
     }
 
     const doRate = (title, movie_id) => {
@@ -18,7 +18,7 @@
         form = document.querySelector("#_" + movie_id);
         console.log(form);
         rating = form.elements["rating"].value;
-        url = "{{ url_for('fake_rate') }}";
+        url = "{{ url_for('rate_movie') }}";
         fetch(
             url, 
             {
@@ -34,7 +34,7 @@
 <body>
     <iframe name="no_reload" style="display:none;"></iframe>
     <div class="wrap">
-        <input type="button" onclick="location.href='{{url_for('home')}}'" value="Go back" />
+        <input type="button" onclick="location.href='{{url_for('home')}}'" value="Go to search" />
         <ul>
         {% for movie_id, movie in movies %}
             <li>
@@ -45,7 +45,7 @@
                         <button type="submit">Rate</button>
                     </form>
                 </div>
-                <input type="button" value="Recommend" onclick="doRecommend('{{ url_for('fake_reco') }}', '{{ movie_id }}');" />
+                <input type="button" value="Recommend" onclick="document.location.href=doRecommend('{{ movie_id }}');" />
             </li>
         {% endfor %}
         </ul>

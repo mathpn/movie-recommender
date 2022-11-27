@@ -75,6 +75,16 @@ async def get_movie_metadata(pool: asyncpg.Pool, movie_id: int) -> MovieMetadata
     return MovieMetadata(**result)
 
 
+async def get_movie_titles(pool: asyncpg.Pool, movie_ids: list[int]) -> dict[int, str]:
+    async with pool.acquire() as connection:
+        rows = await connection.fetch(
+            "SELECT movie_id, movie_title FROM movies WHERE movie_id = ANY($1::int[])", movie_ids
+        )
+    id_2_title = {row["movie_id"]: row["movie_title"] for row in rows}
+    titles = [(idx, id_2_title.get(idx)) for idx in movie_ids]
+    return [(idx, title) for idx, title in titles if title is not None]
+
+
 async def get_all_movie_titles(pool: asyncpg.Pool) -> tuple[list[int], list[str]]:
     async with pool.acquire() as connection:
         rows = await connection.fetch("SELECT movie_id, movie_title FROM movies ORDER BY movie_id")

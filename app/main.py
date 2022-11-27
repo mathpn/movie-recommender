@@ -13,12 +13,13 @@ from starlette.middleware.sessions import SessionMiddleware
 from starlette.responses import JSONResponse, RedirectResponse
 
 from app.db.postgres import (get_all_movies_genres,
-                             get_keyword_searcher_fields, get_user_id,
-                             insert_movie_rating, insert_user,
+                             get_keyword_searcher_fields, get_movie_titles,
+                             get_user_id, insert_movie_rating, insert_user,
                              is_movie_present)
 from app.logger import logger
 from app.lookup import (GenreSearcher, KeywordSearcher, collaborative_search,
-                        create_genre_searcher, create_keyword_searcher)
+                        create_genre_searcher, create_keyword_searcher,
+                        recommend)
 from app.ml.kmf import KMFInferece, create_kmf_inference, online_user_pipeline
 from app.models import Rating
 from app.search.fuzzy_search import get_searcher
@@ -72,63 +73,60 @@ async def get_user_id(request: Request, username: str) -> JSONResponse:
         return JSONResponse(msg, status_code=500)
 
 
-# TODO somehow store username in session
-@app.get("/recommend")
+@app.get("/recommend_json")
 @timed
-async def recommend(
+async def recommend_json(
     request: Request,
-    username: str,
     movie_id: int = Query(ge=0),
-    k: int = Query(ge=1, le=50),
+    k: int = Query(ge=1, le=50, default=6),
 ) -> JSONResponse:
-    user_id = await get_user_id(app.state.pool, username)
+    pool = request.app.state.pool
+    user_id = request.session.get("user_id")
     if user_id is None:
-        return JSONResponse({"error": "username not found"}, 400)
+        return RedirectResponse("/", status_code=status.HTTP_302_FOUND)
 
     genre_searcher: GenreSearcher = request.app.state.genre_searcher
     keyword_searcher: KeywordSearcher = request.app.state.keyword_searcher
-    recos_by_genre = genre_searcher.search_by_movie(movie_id=movie_id, k=2000)
-
-    # keyword-based recommendations
-    recos_by_kw, _ = keyword_searcher.search_by_movie(
-        movie_id=movie_id, k=k, allowed_movie_ids=recos_by_genre
-    )
-
-    # user-based recommendations
     kmf_inference: KMFInferece = request.app.state.kmf_inference
-    recos_by_user, _ = collaborative_search(
-        kmf_inference, user_id, k=k, allowed_movies=recos_by_genre
+
+    recos = await recommend(
+        movie_id, user_id, genre_searcher, keyword_searcher, kmf_inference, k=k, pool=pool
     )
-    recos_by_user = [reco for reco in recos_by_user if reco not in set(recos_by_kw)]
-
-    n_user_recos = min(k // 2, len(recos_by_user)) + max(0, k // 2 - len(recos_by_kw))
-    merged_recos = recos_by_kw[:(k - n_user_recos)] + recos_by_user[:n_user_recos]
-    logger.info(f"found {len(merged_recos)} recommendations for {username}")
-    return JSONResponse(merged_recos)
+    recos_titles = await get_movie_titles(pool, recos)
+    return JSONResponse(recos_titles)
 
 
-# TODO somehow store username in session
-@app.post("/rate")
+@app.get("/recommend_html")
+@timed
+async def recommend_html(
+    request: Request,
+    movie_id: int = Query(ge=0),
+    k: int = Query(ge=1, le=50, default=6),
+) -> JSONResponse:
+    response = await recommend_json(request, movie_id, k)
+    recos = json.loads(response.body)
+    return templates.TemplateResponse("recommendations.html", {"request": request, "movies": recos})
+
+
+@app.post("/rate_movie")
 @timed
 async def rate_movie(
     request: Request,
     bg_tasks: BackgroundTasks,
-    username: str,
-    movie_id: int = Query(ge=0),
-    rating: float = Query(ge=0.0, le=5.0),
+    body: RateParams,
 ) -> JSONResponse:
-    pool = request.app.state.pool
-    if not await is_movie_present(pool, movie_id):
-        return JSONResponse({"error": f"movie ID {movie_id} not found"}, status_code=400)
-
-    user_id = await get_user_id(app.state.pool, username)
+    user_id = request.session.get("user_id")
     if user_id is None:
-        return JSONResponse({"error": "username not found"}, 400)
+        return RedirectResponse("/", status_code=status.HTTP_302_FOUND)
+
+    pool = request.app.state.pool
+    if not await is_movie_present(pool, body.movie_id):
+        return JSONResponse({"error": f"movie ID {body.movie_id} not found"}, status_code=400)
 
     rating_obj = Rating(
         user_id,
-        movie_id=movie_id,
-        rating=int(10 * rating),
+        movie_id=body.movie_id,
+        rating=int(10 * body.rating),
         timestamp=datetime.now()
     )
     change_count = request.app.state.new_ratings
@@ -140,6 +138,8 @@ async def rate_movie(
         logger.error(f"failed to insert rating {rating_obj}: {exc}")
         return JSONResponse({"error": "unkown internal exception"}, status_code=500)
 
+    # TODO count one movie rating only once
+    # TODO do not retrain if there are pending trainings
     if change_count[user_id] >= request.app.state.online_threshold:
         logger.info(f"starting online training for user ID {user_id}")
         verbose_bg = request.app.state.verbose_bg
@@ -183,26 +183,5 @@ async def search(request: Request, query: str, limit: int = 5):
     if request.session.get("user_id") is None:
         return RedirectResponse("/")
     searcher = await get_searcher(request.app.state.pool)
-    logger.info(request.session)
-    logger.info(query)
     movies = searcher(query, limit=5)
-    logger.info(movies)
     return templates.TemplateResponse("search_results.html", {"request": request, "movies": movies})
-
-
-# XXX remove
-@app.post("/fake_rate")
-async def fake_rate(request: Request, body: RateParams):
-    if request.session.get("user_id") is None:
-        return RedirectResponse("/", status_code=status.HTTP_302_FOUND)
-    logger.info(request.session)
-    logger.info(f"rating {body.movie_id} -> {body.rating}")
-
-
-# XXX remove
-@app.get("/fake_reco")
-async def fake_reco(request: Request, movie_id: int):
-    if request.session.get("user_id") is None:
-        return RedirectResponse("/")
-    logger.info(request.session)
-    logger.info(f"recommending for {movie_id}")
