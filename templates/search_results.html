@@ -13,20 +13,25 @@
         fetch(url);
     }
 
-    const doRate = (movie, movie_id) => {
-        console.log(movie);
-        form = document.querySelector("#" + movie);
-        rating = form.elements["rating"].value;
+    const doRate = (title, movie_id) => {
+        console.log(title);
+        form = document.querySelector("#_" + movie_id);
         console.log(form);
-        params = new URLSearchParams({"movie_id": movie_id, "rating": rating});
-        url = "{{ url_for('fake_rate') }}" + "?" + params.toString();
-        fetch(url, {"method": "POST"});
+        rating = form.elements["rating"].value;
+        url = "{{ url_for('fake_rate') }}";
+        fetch(
+            url, 
+            {
+                method: "POST", 
+                headers: {'Accept': 'application/json', 'Content-Type': 'application/json'},
+                body: JSON.stringify({"movie_id": movie_id, "rating": rating}),
+            }
+        );
         return false;
     }
 </script>
 
 <body>
-
     <iframe name="no_reload" style="display:none;"></iframe>
     <div class="wrap">
         <input type="button" onclick="location.href='{{url_for('home')}}'" value="Go back" />
@@ -35,7 +40,7 @@
             <li>
                 {{ movie }}
                 <div class="search">
-                    <form id="{{ movie }}" onsubmit="return doRate('{{ movie }}', '{{ movie_id }}');" target="no_reload">
+                    <form id="_{{ movie_id }}" onsubmit="return doRate('{{ movie }}', '{{ movie_id }}');" target="no_reload">
                         <input type="number" step="0.1" class="ratingTerm" name="rating" />
                         <button type="submit">Rate</button>
                     </form>

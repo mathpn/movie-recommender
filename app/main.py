@@ -1,3 +1,4 @@
+import json
 import os
 from collections import defaultdict
 from datetime import datetime
@@ -6,8 +7,10 @@ import asyncpg
 from fastapi import BackgroundTasks, FastAPI, Query, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from starlette.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel
+from starlette import status
+from starlette.middleware.sessions import SessionMiddleware
+from starlette.responses import JSONResponse, RedirectResponse
 
 from app.db.postgres import (get_all_movies_genres,
                              get_keyword_searcher_fields, get_user_id,
@@ -18,16 +21,26 @@ from app.lookup import (GenreSearcher, KeywordSearcher, collaborative_search,
                         create_genre_searcher, create_keyword_searcher)
 from app.ml.kmf import KMFInferece, create_kmf_inference, online_user_pipeline
 from app.models import Rating
+from app.search.fuzzy_search import get_searcher
 from app.utils import timed
 
 # from fastapi_cprofile.profiler import CProfileMiddleware
 
-
 app = FastAPI()
 app.mount("/static", StaticFiles(directory="./templates"), name="static")
+app.add_middleware(SessionMiddleware, secret_key="foobar")
 
 templates = Jinja2Templates(directory="templates")
 # app.add_middleware(CProfileMiddleware, enable=True, print_each_request=True, strip_dirs=False, sort_by='tottime')
+
+
+class RateParams(BaseModel):
+    movie_id: int = Query(ge=0)
+    rating: float = Query(ge=0.0, le=5.0)
+
+
+class UserParams(BaseModel):
+    username: str
 
 
 @app.on_event("startup")
@@ -45,16 +58,14 @@ async def startup_event():
     app.state.verbose_bg = bool(os.environ.get("VERBOSE")) or False
     app.state.online_threshold = os.environ.get("ONLINE_THRESHOLD") or 5
 
-@app.post("/create_user")
+
+@app.post("/get_user_id")
 @timed
-async def create_user(request: Request, username: str) -> JSONResponse:
+async def get_user_id(request: Request, username: str) -> JSONResponse:
     try:
-        await insert_user(request.app.state.pool, username)
-        return JSONResponse(f"created user {username}")
-    except asyncpg.UniqueViolationError:
-        msg = f"user {username} already exists"
-        logger.error(msg)
-        return JSONResponse(msg, status_code=400)
+        user_id = await insert_user(request.app.state.pool, username)
+        logger.info(f"username {username} already exists, returning user_id")
+        return JSONResponse({"username": username, "user_id": user_id})
     except Exception as exc:
         msg = "create user crashed"
         logger.error(msg + " " + str(exc))
@@ -140,30 +151,58 @@ async def rate_movie(
 
 @app.get("/")
 async def landing(request: Request):
-    return RedirectResponse("/home")
+    if request.session.get("user_id") is not None:
+        return RedirectResponse("/home")
+    return templates.TemplateResponse("username.html", {"request": request})
+
+
+@app.post("/login")
+async def login(request: Request, body: UserParams):
+    user = await get_user_id(request, body.username)
+    try:
+        user = json.loads(user.body)
+        request.session["username"] = user["username"]
+        request.session["user_id"] = user["user_id"]
+        logger.info(f"storing username {body.username} in session")
+    except Exception as exc:
+        logger.error(f"setting user data failed: {exc}")
+        return RedirectResponse("/", status_code=status.HTTP_302_FOUND) # changing from POST to GET
+
+    return RedirectResponse("/home", status_code=status.HTTP_302_FOUND)
 
 
 @app.get("/home")
 async def home(request: Request):
+    if request.session.get("user_id") is None:
+        return RedirectResponse("/")
     return templates.TemplateResponse("search.html", {"request": request})
 
 
 @app.get("/search")
-async def search(request: Request, movie_name: str):
-    # TODO finish endpoint
-    logger.info(movie_name)
-    movie_names = ["foo", "bar", "ping", "pong"]
-    movies = list(enumerate(movie_names))
+async def search(request: Request, query: str, limit: int = 5):
+    if request.session.get("user_id") is None:
+        return RedirectResponse("/")
+    searcher = await get_searcher(request.app.state.pool)
+    logger.info(request.session)
+    logger.info(query)
+    movies = searcher(query, limit=5)
+    logger.info(movies)
     return templates.TemplateResponse("search_results.html", {"request": request, "movies": movies})
 
 
 # XXX remove
 @app.post("/fake_rate")
-async def fake_rate(request: Request, rating):
-    logger.info(f"rating {rating}")
+async def fake_rate(request: Request, body: RateParams):
+    if request.session.get("user_id") is None:
+        return RedirectResponse("/", status_code=status.HTTP_302_FOUND)
+    logger.info(request.session)
+    logger.info(f"rating {body.movie_id} -> {body.rating}")
 
 
 # XXX remove
 @app.get("/fake_reco")
 async def fake_reco(request: Request, movie_id: int):
+    if request.session.get("user_id") is None:
+        return RedirectResponse("/")
+    logger.info(request.session)
     logger.info(f"recommending for {movie_id}")
