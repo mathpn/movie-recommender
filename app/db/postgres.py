@@ -75,6 +75,14 @@ async def get_movie_metadata(pool: asyncpg.Pool, movie_id: int) -> MovieMetadata
     return MovieMetadata(**result)
 
 
+async def get_all_movie_titles(pool: asyncpg.Pool) -> tuple[list[int], list[str]]:
+    async with pool.acquire() as connection:
+        rows = await connection.fetch("SELECT movie_id, movie_title FROM movies ORDER BY movie_id")
+    movie_ids = [row["movie_id"] for row in rows]
+    titles = [row["movie_title"] for row in rows]
+    return movie_ids, titles
+
+
 async def get_all_movies_genres(pool: asyncpg.Pool) -> dict[str, Any]:
     async with pool.acquire() as connection:
         rows = await connection.fetch("SELECT movie_id, genres FROM movies ORDER BY movie_id")
@@ -253,14 +261,15 @@ async def create_users_table(pool: asyncpg.Pool):
         await connection.execute(open("./sql/create_users.sql", "r").read())
 
 
-async def insert_user(pool: asyncpg.Pool, username: str) -> None:
+async def insert_user(pool: asyncpg.Pool, username: str) -> int:
     async with pool.acquire() as connection:
-        await connection.execute("INSERT INTO users (username) VALUES ($1)", username)
+        await connection.execute("INSERT INTO users (username) VALUES ($1) ON CONFLICT DO NOTHING", username)
+        return await connection.fetchval("SELECT user_id FROM users WHERE username = $1", username)
 
 
 async def insert_users(pool: asyncpg.Pool, usernames: list[str]) -> None:
     async with pool.acquire() as connection:
-        await connection.executemany("INSERT INTO users (username) VALUES ($1)", usernames)
+        await connection.executemany("INSERT INTO users (username) VALUES ($1) ON CONFLICT DO NOTHING", usernames)
 
 
 async def get_user_id(pool: asyncpg.Pool, username: str) -> Optional[int]:
