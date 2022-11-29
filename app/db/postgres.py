@@ -247,6 +247,13 @@ async def get_user_ratings(pool: asyncpg.Pool, user_id: int) -> Optional[list[Ra
     ]
 
 
+async def get_user_rate_count(pool: asyncpg.Pool, user_id: int) -> int:
+    async with pool.acquire() as connection:
+        return await connection.fetchval(
+            "SELECT COUNT(*) FROM ratings WHERE user_id = $1", user_id
+        ) or 0
+
+
 async def get_all_ratings(pool: asyncpg.Pool):
     async with pool.acquire() as connection:
         async with connection.transaction():

@@ -14,7 +14,8 @@ from starlette.responses import JSONResponse, RedirectResponse
 
 from app.db.postgres import (get_all_movies_genres,
                              get_keyword_searcher_fields, get_movie_titles,
-                             get_user_id, insert_movie_rating, insert_user,
+                             get_user_id, get_user_rate_count,
+                             insert_movie_rating, insert_user,
                              is_movie_present)
 from app.logger import logger
 from app.lookup import (GenreSearcher, KeywordSearcher, collaborative_search,
@@ -185,3 +186,14 @@ async def search(request: Request, query: str, limit: int = 5):
     searcher = await get_searcher(request.app.state.pool)
     movies = searcher(query, limit=5)
     return templates.TemplateResponse("search_results.html", {"request": request, "movies": movies})
+
+
+@app.get("/user_rate_count")
+async def user_rate_count(request: Request):
+    user_id = request.session.get("user_id")
+    if user_id is None:
+        return JSONResponse("not logged in")
+
+    pool = request.app.state.pool
+    rate_count = await get_user_rate_count(pool, user_id)
+    return JSONResponse(rate_count)
