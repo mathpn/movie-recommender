@@ -10,12 +10,14 @@
     
     <iframe name="no_reload" style="display:none;"></iframe>
     <div class="wrap">
-        <input type="button" onclick="location.href='{{url_for('home')}}'" value="Go to search" />
-        <input type="button" onclick="history.back()" value="Go back" />
+        <input type="button" class="backButton", onclick="location.href='{{url_for('home')}}'" value="Go to search" />
+        <input type="button" class="backButton" onclick="history.back()" value="Go back" />
         <ul>
         {% for movie_id, movie in movies %}
             <li>
-                {{ movie }}
+                <div class="genericText">
+                    {{ movie }}
+                </div>
             </li>
         {% endfor %}
         </ul>

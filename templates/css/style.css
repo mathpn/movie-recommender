@@ -38,6 +38,47 @@ body{
   font-size: 20px;
 }
 
+.rateButton {
+  width: 45px;
+  height: 25px;
+  border: 2px solid #0090a3;
+  background: #00B4CC;
+  text-align: center;
+  color: #fff;
+  border-radius: 0 5px 5px 0;
+  cursor: pointer;
+  font-size: 15px;
+}
+
+.recommendButton {
+  width: 100px;
+  height: 25px;
+  border: 2px solid #0090a3;
+  background: #00B4CC;
+  text-align: center;
+  color: #fff;
+  border-radius: 0 5px 5px 0;
+  cursor: pointer;
+  font-size: 15px;
+}
+
+.backButton {
+  border: 2px solid #0090a3;
+  background: #00B4CC;
+  text-align: center;
+  color: #fff;
+  border-radius: 0 5px 5px 0;
+  cursor: pointer;
+  font-size: 15px;
+}
+
+.genericText {
+  text-align: left;
+  color: rgb(0, 86, 136);
+  font-size: 17px;
+}
+
+
 /*Resize the wrap to see the search bar change!*/
 .wrap{
   width: 30%;

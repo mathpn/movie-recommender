@@ -8,7 +8,7 @@
 
 <body>
     <div class="wrap">
-        <form action="{{ url_for('search') }}" method="GET">
+        <form id="search_form" action="{{ url_for('search') }}" method="GET">
             <div class="search">
                 <input type="text" class="searchTerm" name="query" placeholder="Search for a movie title">
                 <button type="submit" class="searchButton">
@@ -18,3 +18,18 @@
         </form>
     </div>
 </body>
+
+<script>
+    async function getRateCount(referenceNode) {
+        url = "{{ url_for('user_rate_count')}}"
+        out = await fetch(url);
+        let n_ratings = await out.json();
+        var body_ = document.querySelector('.wrap');
+        let search = body_.querySelector(referenceNode);
+        var div_ = document.createElement('div');
+        div_.innerHTML = `<div class="genericText"> You have rated ${n_ratings} movies </div>`;
+        body_.insertBefore(div_, search);
+    }
+
+    getRateCount('#search_form');
+</script>
