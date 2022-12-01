@@ -134,7 +134,7 @@ async def rate_movie(
     try:
         await insert_movie_rating(pool, rating_obj)
         change_count[user_id] += 1
-        logger.info(f"inserted new rating of user {user_id} - change count = {change_count[user_id]}")
+        logger.info(f"inserted new rating of user {user_id} - movie {body.movie_id} - change count = {change_count[user_id]}")
     except Exception as exc:
         logger.error(f"failed to insert rating {rating_obj}: {exc}")
         return JSONResponse({"error": "unkown internal exception"}, status_code=500)

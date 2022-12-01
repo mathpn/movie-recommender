@@ -342,7 +342,7 @@ def train_new_user_vector(
     )
 
 
-async def online_user_pipeline(pool: asyncpg.Pool, user_id: int, verbose: bool = False) -> None:
+async def online_user_pipeline(pool: asyncpg.Pool, user_id: int, verbose: bool = False, min_count: int = 10) -> None:
     ratings = await get_user_ratings(pool, user_id)
     if ratings is None:
         logger.warning(f"online user pipeline: user ID {user_id} not found, interrupting pipeline")
@@ -371,6 +371,9 @@ async def online_user_pipeline(pool: asyncpg.Pool, user_id: int, verbose: bool =
 
     items_emb = torch.tensor([v.vector for v in valid_vb])
     items_bias = torch.tensor([v.bias for v in valid_vb])
+    if len(items_bias) < min_count:
+        logger.info(f"not enough ratings ({len(items_bias)}) for {user_id}, online training aborted")
+        return
 
     new_vector_bias = await run_in_threadpool(
         train_new_user_vector,
