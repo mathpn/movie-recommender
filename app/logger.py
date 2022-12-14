@@ -2,7 +2,6 @@ import logging
 import os
 from logging.config import dictConfig
 
-
 LOGGER_NAME = "movie_recommender"
 LOG_FORMAT = "%(levelprefix)s | %(asctime)s | %(message)s"
 

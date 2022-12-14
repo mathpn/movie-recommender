@@ -1,22 +1,24 @@
 """
 Insert all relevant data into Database.
 
-Will be included in Docker compose. For now, initialize postgres Docker with:
+If you're running outise of Docker, start a local Postgres instance:
     docker run --name postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=movies -p 5401:5432 -d postgres
 """
 import asyncio
 import math
+import os
 from ast import literal_eval
 from datetime import datetime
 
 import asyncpg
 import pandas as pd
 
-from app.db.postgres import (create_global_table, create_movies_table,
-                             create_ratings_primary_key, create_ratings_table,
-                             create_users_table, drop_ratings_primary_key,
-                             insert_movie_metadatas, insert_movie_ratings,
-                             insert_users)
+from app.db.postgres import (count_movies, create_global_table,
+                             create_movies_table, create_ratings_primary_key,
+                             create_ratings_table, create_users_table,
+                             drop_ratings_primary_key, insert_movie_metadatas,
+                             insert_movie_ratings, insert_users)
+from app.logger import logger
 from app.models import MovieMetadata, Rating
 
 POSTGRES_URI = "postgresql://postgres:postgres@localhost:5401/movies"
@@ -98,6 +100,14 @@ async def insert_data(pool: asyncpg.Pool, data_table: pd.DataFrame, processing_f
 
 
 async def main():
+    logger.info("importing data to the database")
+    pool = await asyncpg.create_pool(os.environ.get("POSTGRES_URI", POSTGRES_URI))
+
+    count = await count_movies(pool)
+    if count > 500 and not os.environ.get("FORCE_IMPORT"):
+        logger.info("WARNING: database already has data, skipping data insertion")
+        return
+
     movies_metadata = pd.read_csv("./data/movies_metadata.csv")
     movie_credits = pd.read_csv("./data/credits.csv")
     keywords = pd.read_csv("./data/keywords.csv")
@@ -117,27 +127,26 @@ async def main():
     for feature in features:
         movies_metadata[feature] = movies_metadata[feature].apply(get_list)
 
-    pool = await asyncpg.create_pool(POSTGRES_URI)
     await create_movies_table(pool)
     await create_global_table(pool)
-    print("inserting movie metadata")
+    logger.info("inserting movie metadata")
     await insert_data(pool, movies_metadata, process_metadata, insert_movie_metadatas)
 
     ratings = pd.read_csv("./data/ratings_small.csv")
     links = pd.read_csv("./data/links.csv")
-    print('loaded ratings table')
+    logger.info('loaded ratings table')
     movie_ids = links['movieId'].tolist()
     tmdb_ids = [get_tmdb_id(x) for x in links['tmdbId'].tolist()]
     movie_2_tmdb = dict(zip(movie_ids, tmdb_ids))
     ratings["tmdb_id"] = ratings["movieId"].apply(lambda movie_id: movie_2_tmdb.get(movie_id, -1))
-    print('got movie ids')
+    logger.info('got movie ids')
     ratings = ratings.drop(columns="movieId")
     ratings['timestamp'] = ratings['timestamp'].apply(lambda x: datetime.fromtimestamp(x))
     ratings['rating'] = ratings['rating'].apply(lambda x: int(x * 10))
     ratings = ratings[ratings['tmdb_id'] != -1]
     await create_ratings_table(pool)
     ratings_tuples = (tuple(x) for x in ratings.values)
-    print('inserting ratings')
+    logger.info('inserting ratings')
     await drop_ratings_primary_key(pool)
     async with pool.acquire() as conn:
         await conn.copy_records_to_table(
@@ -150,7 +159,7 @@ async def main():
             WHERE a.ctid < b.ctid AND (a.user_id, a.movie_id) = (b.user_id, b.movie_id)
         """)
     await create_ratings_primary_key(pool)
-    print('inserting users')
+    logger.info('inserting users')
     await create_users_table(pool)
     batch = []
     max_user_id = ratings['userId'].max()
@@ -161,6 +170,7 @@ async def main():
             batch = []
     if batch:
         await insert_users(pool, batch)
+    logger.info("finished inserting the data")
 
 
 if __name__ == "__main__":

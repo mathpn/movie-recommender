@@ -11,7 +11,7 @@ from app.models import KeywordFields, MovieMetadata, Rating, VectorBias
 
 async def create_movies_table(pool: asyncpg.Pool) -> None:
     async with pool.acquire() as connection:
-        await connection.execute(open("./sql/create_movies.sql", "r").read())
+        await connection.execute(open("./db/create_movies.sql", "r").read())
 
 
 def _movie_metadata_to_tuple(metadata: MovieMetadata):
@@ -42,6 +42,11 @@ async def insert_movie_metadata(pool: asyncpg.Pool, metadata: MovieMetadata) -> 
         """,
             *row,
         )
+
+
+async def count_movies(pool: asyncpg.Pool) -> int:
+    async with pool.acquire() as connection:
+        return await connection.fetchval("SELECT COUNT(*) FROM movies")
 
 
 async def insert_movie_metadatas(pool: asyncpg.Pool, metadatas: list[MovieMetadata]) -> None:
@@ -170,7 +175,7 @@ async def delete_all_movie_vector_bias(pool: asyncpg.Pool) -> None:
 
 async def create_ratings_table(pool: asyncpg.Pool) -> None:
     async with pool.acquire() as connection:
-        await connection.execute(open("./sql/create_ratings.sql", "r").read())
+        await connection.execute(open("./db/create_ratings.sql", "r").read())
 
 
 def _rating_to_tuple(rating: Rating) -> tuple:
@@ -275,7 +280,7 @@ async def sample_ratings(pool: asyncpg.Pool, prob: float = 0.1, limit: Optional[
 
 async def create_users_table(pool: asyncpg.Pool):
     async with pool.acquire() as connection:
-        await connection.execute(open("./sql/create_users.sql", "r").read())
+        await connection.execute(open("./db/create_users.sql", "r").read())
 
 
 async def insert_user(pool: asyncpg.Pool, username: str) -> int:
@@ -340,7 +345,7 @@ async def delete_all_user_vector_bias(pool: asyncpg.Pool) -> None:
 
 async def create_global_table(pool: asyncpg.Pool) -> None:
     async with pool.acquire() as connection:
-        await connection.execute(open("./sql/create_global.sql", "r").read())
+        await connection.execute(open("./db/create_global.sql", "r").read())
 
 
 async def update_global_bias(pool: asyncpg.Pool, bias: float) -> None:

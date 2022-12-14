@@ -267,6 +267,7 @@ async def run_train_pipeline(
 ) -> None:
     """Run a full training and store vectors in the database."""
     dataset, users_2_ids, movies_2_ids = await fetch_data(pool, proportion)
+    logger.info(f"training new KMF model with {len(dataset)} ratings")
     model = train_kmf_model(
         dataset,
         users_2_ids,

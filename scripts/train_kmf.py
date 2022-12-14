@@ -7,6 +7,7 @@ Requires a running postgres with data inserted:
 
 import argparse
 import asyncio
+import os
 import random
 
 import asyncpg
@@ -28,11 +29,12 @@ async def main():
     )
     parser.add_argument("--test-split", type=float, default=0.8)
     parser.add_argument("--alpha", type=float, default=0.1)
+    parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
 
-    random.seed(42)
-    torch.random.manual_seed(42)
-    pool = await asyncpg.create_pool(POSTGRES_URI)
+    random.seed(args.seed)
+    torch.random.manual_seed(args.seed)
+    pool = await asyncpg.create_pool(os.environ.get("POSTGRES_URI", POSTGRES_URI))
 
     await run_train_pipeline(
         pool,
