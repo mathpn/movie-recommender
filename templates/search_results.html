@@ -13,7 +13,7 @@
         return url + "?" + params.toString();
     }
 
-    const doRate = (title, movie_id) => {
+    const doRate = (movie_id) => {
         form = document.querySelector("#_" + movie_id);
         rating = form.elements["rating"].value;
         url = "{{ url_for('rate_movie') }}";
@@ -40,7 +40,7 @@
                     {{ movie }}
                 </div>
                 <div class="search">
-                    <form id="_{{ movie_id }}" onsubmit="return doRate('{{ movie }}', '{{ movie_id }}');" target="no_reload">
+                    <form id="_{{ movie_id }}" onsubmit="return doRate('{{ movie_id }}');" target="no_reload">
                         <input type="number" step="0.1" class="ratingTerm" name="rating" />
                         <button type="submit" class="rateButton">Rate</button>
                     </form>
