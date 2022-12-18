@@ -49,7 +49,9 @@ async def count_movies(pool: asyncpg.Pool) -> int:
         return await connection.fetchval("SELECT COUNT(*) FROM movies")
 
 
-async def insert_movie_metadatas(pool: asyncpg.Pool, metadatas: list[MovieMetadata]) -> None:
+async def insert_movie_metadatas(
+    pool: asyncpg.Pool, metadatas: list[MovieMetadata]
+) -> None:
     async with pool.acquire() as connection:
         row_gen = (_movie_metadata_to_tuple(metadata) for metadata in metadatas)
         await connection.executemany(
@@ -83,7 +85,8 @@ async def get_movie_metadata(pool: asyncpg.Pool, movie_id: int) -> MovieMetadata
 async def get_movie_titles(pool: asyncpg.Pool, movie_ids: list[int]) -> dict[int, str]:
     async with pool.acquire() as connection:
         rows = await connection.fetch(
-            "SELECT movie_id, movie_title FROM movies WHERE movie_id = ANY($1::int[])", movie_ids
+            "SELECT movie_id, movie_title FROM movies WHERE movie_id = ANY($1::int[])",
+            movie_ids,
         )
     id_2_title = {row["movie_id"]: row["movie_title"] for row in rows}
     titles = [(idx, id_2_title.get(idx)) for idx in movie_ids]
@@ -92,7 +95,9 @@ async def get_movie_titles(pool: asyncpg.Pool, movie_ids: list[int]) -> dict[int
 
 async def get_all_movie_titles(pool: asyncpg.Pool) -> tuple[list[int], list[str]]:
     async with pool.acquire() as connection:
-        rows = await connection.fetch("SELECT movie_id, movie_title FROM movies ORDER BY movie_id")
+        rows = await connection.fetch(
+            "SELECT movie_id, movie_title FROM movies ORDER BY movie_id"
+        )
     movie_ids = [row["movie_id"] for row in rows]
     titles = [row["movie_title"] for row in rows]
     return movie_ids, titles
@@ -100,7 +105,9 @@ async def get_all_movie_titles(pool: asyncpg.Pool) -> tuple[list[int], list[str]
 
 async def get_all_movies_genres(pool: asyncpg.Pool) -> dict[str, Any]:
     async with pool.acquire() as connection:
-        rows = await connection.fetch("SELECT movie_id, genres FROM movies ORDER BY movie_id")
+        rows = await connection.fetch(
+            "SELECT movie_id, genres FROM movies ORDER BY movie_id"
+        )
     movie_ids = [row["movie_id"] for row in rows]
     genres = [row["genres"] for row in rows]
     return {"movie_ids": movie_ids, "genres": genres}
@@ -108,7 +115,11 @@ async def get_all_movies_genres(pool: asyncpg.Pool) -> dict[str, Any]:
 
 async def is_movie_present(pool: asyncpg.Pool, movie_id: int) -> bool:
     async with pool.acquire() as connection:
-        return bool(await connection.fetchval("SELECT 1 FROM movies WHERE movie_id=$1", movie_id))
+        return bool(
+            await connection.fetchval(
+                "SELECT 1 FROM movies WHERE movie_id=$1", movie_id
+            )
+        )
 
 
 async def get_keyword_searcher_fields(pool: asyncpg.Pool) -> list[KeywordFields]:
@@ -143,11 +154,13 @@ async def write_bulk_movie_vector_bias(pool: asyncpg.Pool, chunk: list[VectorBia
         row_generator = ((x.vector, x.bias, x.entry_id) for x in chunk)
         await connection.executemany(
             "UPDATE movies SET vector = $1, bias = $2 WHERE movie_id = $3",
-            row_generator
+            row_generator,
         )
 
 
-async def get_movie_vector_bias(pool: asyncpg.Pool, movie_id: int) -> Optional[VectorBias]:
+async def get_movie_vector_bias(
+    pool: asyncpg.Pool, movie_id: int
+) -> Optional[VectorBias]:
     async with pool.acquire() as connection:
         row = await connection.fetchrow(
             "SELECT vector, bias FROM movies WHERE movie_id = $1", movie_id
@@ -165,7 +178,9 @@ async def get_all_movie_vector_bias(pool: asyncpg.Pool):
             async for row in connection.cursor(
                 "SELECT movie_id, vector, bias FROM movies WHERE vector IS NOT NULL"
             ):
-                yield VectorBias(vector=row["vector"], bias=row["bias"], entry_id=row["movie_id"])
+                yield VectorBias(
+                    vector=row["vector"], bias=row["bias"], entry_id=row["movie_id"]
+                )
 
 
 async def delete_all_movie_vector_bias(pool: asyncpg.Pool) -> None:
@@ -228,16 +243,22 @@ async def insert_movie_ratings(pool: asyncpg.Pool, ratings: list[Rating]) -> Non
         )
 
 
-async def get_user_movie_rating(pool: asyncpg.Pool, user_id: int, movie_id: int) -> Optional[int]:
+async def get_user_movie_rating(
+    pool: asyncpg.Pool, user_id: int, movie_id: int
+) -> Optional[int]:
     async with pool.acquire() as connection:
         return await connection.fetchval(
-            "SELECT rating FROM ratings WHERE user_id = $1 AND movie_id = $2", user_id, movie_id
+            "SELECT rating FROM ratings WHERE user_id = $1 AND movie_id = $2",
+            user_id,
+            movie_id,
         )
+
 
 async def get_user_ratings(pool: asyncpg.Pool, user_id: int) -> Optional[list[Rating]]:
     async with pool.acquire() as connection:
         ratings = await connection.fetch(
-            "SELECT user_id, movie_id, rating, rating_timestamp FROM ratings WHERE user_id = $1", user_id
+            "SELECT user_id, movie_id, rating, rating_timestamp FROM ratings WHERE user_id = $1",
+            user_id,
         )
     if not ratings:
         return None
@@ -246,7 +267,7 @@ async def get_user_ratings(pool: asyncpg.Pool, user_id: int) -> Optional[list[Ra
             user_id=r["user_id"],
             movie_id=r["movie_id"],
             rating=r["rating"],
-            timestamp=r["rating_timestamp"]
+            timestamp=r["rating_timestamp"],
         )
         for r in ratings
     ]
@@ -254,9 +275,12 @@ async def get_user_ratings(pool: asyncpg.Pool, user_id: int) -> Optional[list[Ra
 
 async def get_user_rate_count(pool: asyncpg.Pool, user_id: int) -> int:
     async with pool.acquire() as connection:
-        return await connection.fetchval(
-            "SELECT COUNT(*) FROM ratings WHERE user_id = $1", user_id
-        ) or 0
+        return (
+            await connection.fetchval(
+                "SELECT COUNT(*) FROM ratings WHERE user_id = $1", user_id
+            )
+            or 0
+        )
 
 
 async def get_all_ratings(pool: asyncpg.Pool):
@@ -268,7 +292,9 @@ async def get_all_ratings(pool: asyncpg.Pool):
                 yield dict(row)
 
 
-async def sample_ratings(pool: asyncpg.Pool, prob: float = 0.1, limit: Optional[int] = None):
+async def sample_ratings(
+    pool: asyncpg.Pool, prob: float = 0.1, limit: Optional[int] = None
+):
     async with pool.acquire() as connection:
         async with connection.transaction():
             query = f"SELECT user_id, movie_id, rating FROM ratings WHERE random() < $1"
@@ -285,18 +311,26 @@ async def create_users_table(pool: asyncpg.Pool):
 
 async def insert_user(pool: asyncpg.Pool, username: str) -> int:
     async with pool.acquire() as connection:
-        await connection.execute("INSERT INTO users (username) VALUES ($1) ON CONFLICT DO NOTHING", username)
-        return await connection.fetchval("SELECT user_id FROM users WHERE username = $1", username)
+        await connection.execute(
+            "INSERT INTO users (username) VALUES ($1) ON CONFLICT DO NOTHING", username
+        )
+        return await connection.fetchval(
+            "SELECT user_id FROM users WHERE username = $1", username
+        )
 
 
 async def insert_users(pool: asyncpg.Pool, usernames: list[str]) -> None:
     async with pool.acquire() as connection:
-        await connection.executemany("INSERT INTO users (username) VALUES ($1) ON CONFLICT DO NOTHING", usernames)
+        await connection.executemany(
+            "INSERT INTO users (username) VALUES ($1) ON CONFLICT DO NOTHING", usernames
+        )
 
 
 async def get_user_id(pool: asyncpg.Pool, username: str) -> Optional[int]:
     async with pool.acquire() as connection:
-        return await connection.fetchval("SELECT user_id FROM users WHERE username = $1", username)
+        return await connection.fetchval(
+            "SELECT user_id FROM users WHERE username = $1", username
+        )
 
 
 async def write_user_vector_bias(pool: asyncpg.Pool, vector_bias: VectorBias):
@@ -317,7 +351,9 @@ async def write_bulk_user_vector_bias(pool: asyncpg.Pool, chunk: list[VectorBias
         )
 
 
-async def get_user_vector_bias(pool: asyncpg.Pool, user_id: int) -> Optional[VectorBias]:
+async def get_user_vector_bias(
+    pool: asyncpg.Pool, user_id: int
+) -> Optional[VectorBias]:
     async with pool.acquire() as connection:
         row = await connection.fetchrow(
             "SELECT vector, bias FROM users WHERE user_id = $1", user_id
@@ -335,7 +371,9 @@ async def get_all_user_vector_bias(pool: asyncpg.Pool):
             async for row in connection.cursor(
                 "SELECT user_id, vector, bias FROM users WHERE vector IS NOT NULL"
             ):
-                yield VectorBias(vector=row["vector"], bias=row["bias"], entry_id=row["user_id"])
+                yield VectorBias(
+                    vector=row["vector"], bias=row["bias"], entry_id=row["user_id"]
+                )
 
 
 async def delete_all_user_vector_bias(pool: asyncpg.Pool) -> None:

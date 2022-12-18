@@ -79,7 +79,9 @@ def process_rating(row):
     )
 
 
-async def insert_data(pool: asyncpg.Pool, data_table: pd.DataFrame, processing_fn, callback):
+async def insert_data(
+    pool: asyncpg.Pool, data_table: pd.DataFrame, processing_fn, callback
+):
     batch = []
     tasks = set()
     for _, row in data_table.iterrows():
@@ -134,35 +136,41 @@ async def main():
 
     ratings = pd.read_csv("./data/ratings_small.csv")
     links = pd.read_csv("./data/links.csv")
-    logger.info('loaded ratings table')
-    movie_ids = links['movieId'].tolist()
-    tmdb_ids = [get_tmdb_id(x) for x in links['tmdbId'].tolist()]
+    logger.info("loaded ratings table")
+    movie_ids = links["movieId"].tolist()
+    tmdb_ids = [get_tmdb_id(x) for x in links["tmdbId"].tolist()]
     movie_2_tmdb = dict(zip(movie_ids, tmdb_ids))
-    ratings["tmdb_id"] = ratings["movieId"].apply(lambda movie_id: movie_2_tmdb.get(movie_id, -1))
-    logger.info('got movie ids')
+    ratings["tmdb_id"] = ratings["movieId"].apply(
+        lambda movie_id: movie_2_tmdb.get(movie_id, -1)
+    )
+    logger.info("got movie ids")
     ratings = ratings.drop(columns="movieId")
-    ratings['timestamp'] = ratings['timestamp'].apply(lambda x: datetime.fromtimestamp(x))
-    ratings['rating'] = ratings['rating'].apply(lambda x: int(x * 10))
-    ratings = ratings[ratings['tmdb_id'] != -1]
+    ratings["timestamp"] = ratings["timestamp"].apply(
+        lambda x: datetime.fromtimestamp(x)
+    )
+    ratings["rating"] = ratings["rating"].apply(lambda x: int(x * 10))
+    ratings = ratings[ratings["tmdb_id"] != -1]
     await create_ratings_table(pool)
     ratings_tuples = (tuple(x) for x in ratings.values)
-    logger.info('inserting ratings')
+    logger.info("inserting ratings")
     await drop_ratings_primary_key(pool)
     async with pool.acquire() as conn:
         await conn.copy_records_to_table(
             "ratings",
             records=ratings_tuples,
-            columns=["user_id", "rating", "rating_timestamp", "movie_id"]
+            columns=["user_id", "rating", "rating_timestamp", "movie_id"],
         )
-        await conn.execute("""
+        await conn.execute(
+            """
             DELETE FROM ratings a USING ratings b
             WHERE a.ctid < b.ctid AND (a.user_id, a.movie_id) = (b.user_id, b.movie_id)
-        """)
+        """
+        )
     await create_ratings_primary_key(pool)
-    logger.info('inserting users')
+    logger.info("inserting users")
     await create_users_table(pool)
     batch = []
-    max_user_id = ratings['userId'].max()
+    max_user_id = ratings["userId"].max()
     for i in range(max_user_id):
         batch.append((f"data_{i + 1}",))
         if len(batch) >= 1024:

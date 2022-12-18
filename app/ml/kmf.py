@@ -2,7 +2,7 @@
 Kernel Matrix Factorization (KMF) model.
 """
 
-#pylint: disable=no-member
+# pylint: disable=no-member
 import asyncio
 from typing import Optional
 
@@ -68,7 +68,7 @@ class KMFInferece:
         user_bias: dict[int, float],
         item_bias: dict[int, float],
         global_bias: float,
-        max_score: float = 5.0
+        max_score: float = 5.0,
     ):
         self.user_emb = user_emb
         self.item_emb = item_emb
@@ -95,7 +95,9 @@ class KMFInferece:
         user_emb = user_emb.reshape((1, -1))
         item_emb = np.stack([self.item_emb[movie] for movie in allowed_movies], axis=0)
         user_bias = self.user_bias[user_id]
-        item_bias = np.stack([self.item_bias[movie] for movie in allowed_movies], axis=0)
+        item_bias = np.stack(
+            [self.item_bias[movie] for movie in allowed_movies], axis=0
+        )
         pred_score = self.max_score * _sigmoid(
             self.global_bias + item_bias + user_bias + (item_emb * user_emb).sum(axis=1)
         )
@@ -119,7 +121,9 @@ def _sigmoid(x):
     return 1 / (1 + np.exp(-x))
 
 
-async def _build_vector_bias_dicts(callback) -> tuple[dict[int, np.ndarray], dict[int, float]]:
+async def _build_vector_bias_dicts(
+    callback,
+) -> tuple[dict[int, np.ndarray], dict[int, float]]:
     vector_dict = {}
     bias_dict = {}
     async for vector_bias in callback():
@@ -139,15 +143,21 @@ async def create_kmf_inference(pool: asyncpg.Pool) -> Optional[KMFInferece]:
     global_bias = await get_global_bias(pool)
 
     if len(user_emb) == 0:
-        logger.error("no user vectors are available, it's not possible to build inference object")
+        logger.error(
+            "no user vectors are available, it's not possible to build inference object"
+        )
         return None
 
     if len(movie_emb) == 0:
-        logger.error("no movie vectors are available, it's not possible to build inference object")
+        logger.error(
+            "no movie vectors are available, it's not possible to build inference object"
+        )
         return None
 
     if global_bias is None:
-        logger.error("global bias not found, it's not possible to create inference object")
+        logger.error(
+            "global bias not found, it's not possible to create inference object"
+        )
         return None
 
     kmf_inference = KMFInferece(
@@ -235,7 +245,9 @@ def train_kmf_model(
         mse_acc /= steps
         l2_acc /= steps
         if verbose:
-            logger.info(f"Epoch {epoch + 1} -> MSE = {mse_acc:.3f} | L2 reg = {l2_acc:.2f}")
+            logger.info(
+                f"Epoch {epoch + 1} -> MSE = {mse_acc:.3f} | L2 reg = {l2_acc:.2f}"
+            )
 
         test_loss = test_steps = 0
         model.eval()
@@ -252,7 +264,9 @@ def train_kmf_model(
         test_losses.append(test_loss)
         if verbose:
             logger.info(f"Test: MSE = {test_loss:.3f}")
-        if len(test_losses) > stop_after and np.all(np.diff(test_losses)[-stop_after:] > -1e-3):
+        if len(test_losses) > stop_after and np.all(
+            np.diff(test_losses)[-stop_after:] > -1e-3
+        ):
             break
     return model
 
@@ -285,11 +299,7 @@ async def run_train_pipeline(
     await update_global_bias(pool, float(model.global_bias))
 
     await write_model_data(
-        model.user_emb,
-        model.user_bias,
-        users_2_ids,
-        write_bulk_user_vector_bias,
-        pool
+        model.user_emb, model.user_bias, users_2_ids, write_bulk_user_vector_bias, pool
     )
 
     await write_model_data(
@@ -313,7 +323,7 @@ def train_new_user_vector(
 ) -> VectorBias:
     """
     (Re)train a user vector with new data without retraining the entire model.
-    
+
     Inspired by https://www.ismll.uni-hildesheim.de/pub/pdfs/Rendle2008-Online_Updating_Regularized_Kernel_Matrix_Factorization_Models.pdf
     """
     emb_dim = items_emb.shape[-1]
@@ -325,7 +335,7 @@ def train_new_user_vector(
     user_optim = torch.optim.RMSprop([new_user_emb, new_user_bias], lr=1e-2)
     for i in range(steps):
         user_optim.zero_grad()
-    
+
         pred = 5 * torch.sigmoid(
             global_bias + new_user_bias + items_bias + (items_emb * new_user_emb).sum(1)
         )
@@ -343,18 +353,26 @@ def train_new_user_vector(
     )
 
 
-async def online_user_pipeline(pool: asyncpg.Pool, user_id: int, verbose: bool = False, min_count: int = 10) -> None:
+async def online_user_pipeline(
+    pool: asyncpg.Pool, user_id: int, verbose: bool = False, min_count: int = 10
+) -> None:
     ratings = await get_user_ratings(pool, user_id)
     if ratings is None:
-        logger.warning(f"online user pipeline: user ID {user_id} not found, interrupting pipeline")
+        logger.warning(
+            f"online user pipeline: user ID {user_id} not found, interrupting pipeline"
+        )
         return
 
     global_bias = await get_global_bias(pool)
     if global_bias is None:
-        logger.warning(f"online user pipeline: global bias not set, interrupting pipeline")
+        logger.warning(
+            f"online user pipeline: global bias not set, interrupting pipeline"
+        )
         return
 
-    tasks = [asyncio.create_task(get_movie_vector_bias(pool, r.movie_id)) for r in ratings]
+    tasks = [
+        asyncio.create_task(get_movie_vector_bias(pool, r.movie_id)) for r in ratings
+    ]
     vector_biases = await asyncio.gather(*tasks)
 
     valid_ratings, valid_vb = [], []
@@ -373,7 +391,9 @@ async def online_user_pipeline(pool: asyncpg.Pool, user_id: int, verbose: bool =
     items_emb = torch.tensor([v.vector for v in valid_vb])
     items_bias = torch.tensor([v.bias for v in valid_vb])
     if len(items_bias) < min_count:
-        logger.info(f"not enough ratings ({len(items_bias)}) for {user_id}, online training aborted")
+        logger.info(
+            f"not enough ratings ({len(items_bias)}) for {user_id}, online training aborted"
+        )
         return
 
     new_vector_bias = await run_in_threadpool(
@@ -392,11 +412,14 @@ async def online_user_pipeline(pool: asyncpg.Pool, user_id: int, verbose: bool =
 async def main():
     POSTGRES_URI = "postgresql://postgres:postgres@localhost:5401/movies"
     import asyncpg
+
     pool = await asyncpg.create_pool(POSTGRES_URI)
     from app.ml.kmf import KMFInferece, create_kmf_inference
+
     kmf = await create_kmf_inference(pool)
     return kmf
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     kmf = asyncio.run(main())
     print(kmf)

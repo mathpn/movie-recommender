@@ -28,7 +28,9 @@ class GenreSearcher:
         self.movie2genres = dict(zip(movie_ids, list(encoded_genres)))
         self.n_genres = n_genres
 
-    def search_by_movie(self, movie_id: int, k: Optional[int] = None) -> Optional[list[int]]:
+    def search_by_movie(
+        self, movie_id: int, k: Optional[int] = None
+    ) -> Optional[list[int]]:
         movie_genres = self.movie2genres.get(movie_id)
         if movie_genres is None:
             return None
@@ -45,21 +47,27 @@ class GenreSearcher:
         return len(self.movie_ids)
 
 
-def create_genre_searcher(movie_ids: list[int], genres: list[list[str]]) -> GenreSearcher:
+def create_genre_searcher(
+    movie_ids: list[int], genres: list[list[str]]
+) -> GenreSearcher:
     all_genres = set()
     for genres_ in genres:
         if not genres_:
             continue
         all_genres.update(genres_)
     genre_to_int = {genre: 2**i for i, genre in enumerate(all_genres)}
-    encoded_genres = list(map(lambda genre_list: sum(genre_to_int[x] for x in genre_list), genres))
+    encoded_genres = list(
+        map(lambda genre_list: sum(genre_to_int[x] for x in genre_list), genres)
+    )
     return GenreSearcher(
         movie_ids=movie_ids, encoded_genres=encoded_genres, n_genres=len(all_genres)
     )
 
 
 class KeywordSearcher:
-    def __init__(self, movie_ids: list[int], sparse_keyword_count: scipy.sparse.csr.csr_matrix):
+    def __init__(
+        self, movie_ids: list[int], sparse_keyword_count: scipy.sparse.csr.csr_matrix
+    ):
         self.movie_ids = list(movie_ids)
         self.sparse_keywords = sparse_keyword_count.copy()
         self.movie_2_internal_id = {movie_id: i for i, movie_id in enumerate(movie_ids)}
@@ -73,7 +81,9 @@ class KeywordSearcher:
 
         movie_sparse_row = self.sparse_keywords[internal_id, :]
         if allowed_movie_ids is not None:
-            allowed_movies = np.array([self.movie_2_internal_id[idx] for idx in allowed_movie_ids])
+            allowed_movies = np.array(
+                [self.movie_2_internal_id[idx] for idx in allowed_movie_ids]
+            )
             allowed_movie_rows = self.sparse_keywords[allowed_movies, :]
         else:
             allowed_movie_ids = self.movie_ids
@@ -83,7 +93,9 @@ class KeywordSearcher:
         top_idx = np.argsort(-sim)[1 : k + 1]
         top_k_sim = sim[top_idx]
         top_k_sim /= top_k_sim.max()
-        return [allowed_movie_ids[idx] for idx in top_idx], [sim[idx] for idx in top_idx]
+        return [allowed_movie_ids[idx] for idx in top_idx], [
+            sim[idx] for idx in top_idx
+        ]
 
 
 def _remove_spaces(string) -> str:
@@ -113,10 +125,12 @@ def collaborative_search(
     kmf_inference: KMFInferece,
     user_id: int,
     k: int,
-    allowed_movies: Optional[list[int]] = None
+    allowed_movies: Optional[list[int]] = None,
 ) -> tuple[list[int], list[float]]:
     """Search recommended movies for a given user."""
-    allowed_movies = allowed_movies if allowed_movies is not None else kmf_inference.movie_ids
+    allowed_movies = (
+        allowed_movies if allowed_movies is not None else kmf_inference.movie_ids
+    )
     scores = kmf_inference(user_id, allowed_movies)
 
     if scores is None:
@@ -142,7 +156,7 @@ async def recommend(
         movie_id=movie_id, k=k, allowed_movie_ids=recos_by_genre
     )
 
-    # user-based recommendations    
+    # user-based recommendations
     if kmf_inference is not None:
         recos_by_user, _ = collaborative_search(
             kmf_inference, user_id, k=k, allowed_movies=recos_by_genre
@@ -151,8 +165,10 @@ async def recommend(
     else:
         recos_by_user = []
 
-    logger.debug(f"{await get_movie_titles(pool, recos_by_kw) = }\n{await get_movie_titles(pool, recos_by_user) = }") # TODO remove
+    logger.debug(
+        f"{await get_movie_titles(pool, recos_by_kw) = }\n{await get_movie_titles(pool, recos_by_user) = }"
+    )  # TODO remove
     n_user_recos = min(k // 2, len(recos_by_user)) + max(0, k // 2 - len(recos_by_kw))
-    merged_recos = recos_by_kw[:(k - n_user_recos)] + recos_by_user[:n_user_recos]
+    merged_recos = recos_by_kw[: (k - n_user_recos)] + recos_by_user[:n_user_recos]
     logger.info(f"found {len(merged_recos)} recommendations for user {user_id}")
     return merged_recos

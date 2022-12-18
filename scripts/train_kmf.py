@@ -37,12 +37,7 @@ async def main():
     pool = await asyncpg.create_pool(os.environ.get("POSTGRES_URI", POSTGRES_URI))
 
     await run_train_pipeline(
-        pool,
-        args.emb_dim,
-        args.proportion,
-        args.test_split,
-        args.alpha,
-        verbose=True
+        pool, args.emb_dim, args.proportion, args.test_split, args.alpha, verbose=True
     )
 
 

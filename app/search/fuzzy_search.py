@@ -13,7 +13,7 @@ from app.utils import timed
 
 def _clean_string(string):
     string = unidecode(string).lower()
-    return re.sub(r'[^\x00-\x7F]', '', string)
+    return re.sub(r"[^\x00-\x7F]", "", string)
 
 
 @cached(ttl=600)
@@ -35,7 +35,7 @@ async def get_searcher(pool: asyncpg.Pool):
             query,
             ids_2_clean_titles,
             limit=limit,
-            scorer=distance.JaroWinkler.normalized_distance
+            scorer=distance.JaroWinkler.normalized_distance,
         )
         logger.debug(top_matches)
         return [(movie_id, ids_2_titles[movie_id]) for _, _, movie_id in top_matches]
@@ -44,7 +44,9 @@ async def get_searcher(pool: asyncpg.Pool):
 
 
 async def main():
-    pool = await asyncpg.create_pool("postgresql://postgres:postgres@localhost:5401/movies")
+    pool = await asyncpg.create_pool(
+        "postgresql://postgres:postgres@localhost:5401/movies"
+    )
     searcher = await get_searcher(pool)
     out = searcher("axé")
     print(out)
@@ -54,5 +56,5 @@ async def main():
     print(out)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     asyncio.run(main())

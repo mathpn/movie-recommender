@@ -26,14 +26,11 @@ from app.models import Rating
 from app.search.fuzzy_search import get_searcher
 from app.utils import timed
 
-# from fastapi_cprofile.profiler import CProfileMiddleware
-
 app = FastAPI()
 app.mount("/static", StaticFiles(directory="./templates"), name="static")
 app.add_middleware(SessionMiddleware, secret_key="foobar")
 
 templates = Jinja2Templates(directory="templates")
-# app.add_middleware(CProfileMiddleware, enable=True, print_each_request=True, strip_dirs=False, sort_by='tottime')
 
 
 class RateParams(BaseModel):
@@ -91,7 +88,13 @@ async def recommend_json(
     kmf_inference: KMFInferece = request.app.state.kmf_inference
 
     recos = await recommend(
-        movie_id, user_id, genre_searcher, keyword_searcher, kmf_inference, k=k, pool=pool
+        movie_id,
+        user_id,
+        genre_searcher,
+        keyword_searcher,
+        kmf_inference,
+        k=k,
+        pool=pool,
     )
     recos_titles = await get_movie_titles(pool, recos)
     return JSONResponse(recos_titles)
@@ -106,7 +109,9 @@ async def recommend_html(
 ) -> JSONResponse:
     response = await recommend_json(request, movie_id, k)
     recos = json.loads(response.body)
-    return templates.TemplateResponse("recommendations.html", {"request": request, "movies": recos})
+    return templates.TemplateResponse(
+        "recommendations.html", {"request": request, "movies": recos}
+    )
 
 
 @app.post("/rate_movie")
@@ -122,19 +127,23 @@ async def rate_movie(
 
     pool = request.app.state.pool
     if not await is_movie_present(pool, body.movie_id):
-        return JSONResponse({"error": f"movie ID {body.movie_id} not found"}, status_code=400)
+        return JSONResponse(
+            {"error": f"movie ID {body.movie_id} not found"}, status_code=400
+        )
 
     rating_obj = Rating(
         user_id,
         movie_id=body.movie_id,
         rating=int(10 * body.rating),
-        timestamp=datetime.now()
+        timestamp=datetime.now(),
     )
     change_count = request.app.state.new_ratings
     try:
         await insert_movie_rating(pool, rating_obj)
         change_count[user_id] += 1
-        logger.info(f"inserted new rating of user {user_id} - movie {body.movie_id} - change count = {change_count[user_id]}")
+        logger.info(
+            f"inserted new rating of user {user_id} - movie {body.movie_id} - change count = {change_count[user_id]}"
+        )
     except Exception as exc:
         logger.error(f"failed to insert rating {rating_obj}: {exc}")
         return JSONResponse({"error": "unkown internal exception"}, status_code=500)
@@ -167,7 +176,9 @@ async def login(request: Request, body: UserParams):
         logger.info(f"storing username {body.username} in session")
     except Exception as exc:
         logger.error(f"setting user data failed: {exc}")
-        return RedirectResponse("/", status_code=status.HTTP_302_FOUND) # changing from POST to GET
+        return RedirectResponse(
+            "/", status_code=status.HTTP_302_FOUND
+        )  # changing from POST to GET
 
     return RedirectResponse("/home", status_code=status.HTTP_302_FOUND)
 
@@ -185,7 +196,9 @@ async def search(request: Request, query: str, limit: int = 5):
         return RedirectResponse("/")
     searcher = await get_searcher(request.app.state.pool)
     movies = searcher(query, limit=5)
-    return templates.TemplateResponse("search_results.html", {"request": request, "movies": movies})
+    return templates.TemplateResponse(
+        "search_results.html", {"request": request, "movies": movies}
+    )
 
 
 @app.get("/user_rate_count")

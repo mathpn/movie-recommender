@@ -18,5 +18,6 @@ async def main():
     await create_ratings_table(pool)
     logger.info("created all required tables")
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     asyncio.run(main())

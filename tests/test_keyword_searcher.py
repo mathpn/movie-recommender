@@ -3,7 +3,9 @@ from app.models import KeywordFields
 
 MOVIE_1 = KeywordFields(1, ["action"], ["foo", "bar"], ["ping", "pong"], "foobar")
 MOVIE_2 = KeywordFields(2, ["drama"], ["f#o", "b@r"], ["ping", "pong"], "f#ob@r")
-MOVIE_3 = KeywordFields(3, ["adventure"], ["something", "else"], ["pang", "pung"], "foobar")
+MOVIE_3 = KeywordFields(
+    3, ["adventure"], ["something", "else"], ["pang", "pung"], "foobar"
+)
 
 
 def test_keyword_searcher_match_order():
