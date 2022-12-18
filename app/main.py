@@ -16,11 +16,12 @@ from app.db.postgres import (get_all_movies_genres,
                              get_keyword_searcher_fields, get_movie_titles,
                              get_user_id, get_user_rate_count,
                              insert_movie_rating, insert_user,
-                             is_movie_present)
+                             is_movie_present, vector_bias_exist)
 from app.logger import logger
-from app.lookup import (GenreSearcher, KeywordSearcher, collaborative_search,
-                        create_genre_searcher, create_keyword_searcher,
-                        recommend)
+from app.lookup import (GenreSearcher, KeywordSearcher, create_genre_searcher,
+                        create_keyword_searcher, recommend)
+from app.ml.background import (background_full_training,
+                               background_online_training)
 from app.ml.kmf import KMFInferece, create_kmf_inference, online_user_pipeline
 from app.models import Rating
 from app.search.fuzzy_search import get_searcher
@@ -52,10 +53,14 @@ async def startup_event():
     )
     keyword_fields = await get_keyword_searcher_fields(app.state.pool)
     app.state.keyword_searcher = create_keyword_searcher(keyword_fields)
+    if not await vector_bias_exist(app.state.pool):
+        await background_full_training(app.state, verbose=True)
     app.state.kmf_inference = await create_kmf_inference(app.state.pool)
-    app.state.new_ratings = defaultdict(int)
+    app.state.pending_training = set()
+    app.state.new_ratings = defaultdict(set)
     app.state.verbose_bg = bool(os.environ.get("VERBOSE")) or False
     app.state.online_threshold = os.environ.get("ONLINE_THRESHOLD") or 5
+    app.state.global_change_count = [0]
 
 
 @app.post("/get_user_id")
@@ -137,24 +142,32 @@ async def rate_movie(
         rating=int(10 * body.rating),
         timestamp=datetime.now(),
     )
-    change_count = request.app.state.new_ratings
+    new_ratings = request.app.state.new_ratings
     try:
         await insert_movie_rating(pool, rating_obj)
-        change_count[user_id] += 1
+        new_ratings[user_id].add(body.movie_id)
         logger.info(
-            f"inserted new rating of user {user_id} - movie {body.movie_id} - change count = {change_count[user_id]}"
+            f"inserted new rating of user {user_id} - movie {body.movie_id} - new ratings = {len(new_ratings[user_id])}"
         )
     except Exception as exc:
         logger.error(f"failed to insert rating {rating_obj}: {exc}")
         return JSONResponse({"error": "unkown internal exception"}, status_code=500)
 
-    # TODO count one movie rating only once
-    # TODO do not retrain if there are pending trainings
-    if change_count[user_id] >= request.app.state.online_threshold:
+    state = request.app.state
+    if (
+        len(new_ratings[user_id]) >= state.online_threshold
+        and user_id not in state.pending_training
+    ):
         logger.info(f"starting online training for user ID {user_id}")
         verbose_bg = request.app.state.verbose_bg
-        change_count.pop(user_id, None)
-        bg_tasks.add_task(online_user_pipeline, pool, user_id, verbose=verbose_bg)
+        bg_tasks.add_task(
+            background_online_training,
+            state,
+            pool,
+            user_id,
+            verbose=verbose_bg,
+            min_count=state.online_threshold,
+        )
 
     return JSONResponse({"status": "ok"}, status_code=200)
 

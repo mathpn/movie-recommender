@@ -44,6 +44,19 @@ async def insert_movie_metadata(pool: asyncpg.Pool, metadata: MovieMetadata) -> 
         )
 
 
+async def movie_table_exists(pool: asyncpg.Pool) -> bool:
+    async with pool.acquire() as connection:
+        return await connection.fetchval(
+            """
+        SELECT EXISTS(
+            SELECT * FROM information_schema.tables 
+            WHERE table_schema = 'movies'
+            AND table_name = 'movies'
+        )
+        """
+        )
+
+
 async def count_movies(pool: asyncpg.Pool) -> int:
     async with pool.acquire() as connection:
         return await connection.fetchval("SELECT COUNT(*) FROM movies")
@@ -137,6 +150,17 @@ async def get_keyword_searcher_fields(pool: asyncpg.Pool) -> list[KeywordFields]
         )
         for row in rows
     ]
+
+
+async def vector_bias_exist(pool: asyncpg.Pool) -> bool:
+    async with pool.acquire() as connection:
+        movie_vb = await connection.fetchval(
+            "SELECT 1 FROM movies WHERE vector IS NOT NULL"
+        )
+        user_vb = await connection.fetchval(
+            "SELECT 1 FROM users WHERE vector IS NOT NULL"
+        )
+        return bool(movie_vb and user_vb)
 
 
 async def write_movie_vector_bias(pool: asyncpg.Pool, vector_bias: VectorBias):

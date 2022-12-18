@@ -4,6 +4,7 @@ Insert all relevant data into Database.
 If you're running outise of Docker, start a local Postgres instance:
     docker run --name postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=movies -p 5401:5432 -d postgres
 """
+import argparse
 import asyncio
 import math
 import os
@@ -17,7 +18,8 @@ from app.db.postgres import (count_movies, create_global_table,
                              create_movies_table, create_ratings_primary_key,
                              create_ratings_table, create_users_table,
                              drop_ratings_primary_key, insert_movie_metadatas,
-                             insert_movie_ratings, insert_users)
+                             insert_movie_ratings, insert_users,
+                             movie_table_exists)
 from app.logger import logger
 from app.models import MovieMetadata, Rating
 
@@ -102,13 +104,26 @@ async def insert_data(
 
 
 async def main():
-    logger.info("importing data to the database")
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--full",
+        action="store_true",
+        help="import the full dataset (takes a long time)",
+    )
+    args = parser.parse_args()
+
+    if args.full:
+        args.warning("importing the full ratings dataset, this may take a long time")
+
+    logger.warning("importing data to the database - please wait...")
     pool = await asyncpg.create_pool(os.environ.get("POSTGRES_URI", POSTGRES_URI))
 
-    count = await count_movies(pool)
-    if count > 500 and not os.environ.get("FORCE_IMPORT"):
-        logger.info("WARNING: database already has data, skipping data insertion")
-        return
+    movies_exist = await movie_table_exists(pool)
+    if movies_exist:
+        count = await count_movies(pool)
+        if count > 500 and not os.environ.get("FORCE_IMPORT"):
+            logger.info("WARNING: database already has data, skipping data insertion")
+            return
 
     movies_metadata = pd.read_csv("./data/movies_metadata.csv")
     movie_credits = pd.read_csv("./data/credits.csv")
@@ -134,7 +149,8 @@ async def main():
     logger.info("inserting movie metadata")
     await insert_data(pool, movies_metadata, process_metadata, insert_movie_metadatas)
 
-    ratings = pd.read_csv("./data/ratings_small.csv")
+    ratings_file = "./data/ratings.csv" if args.full else "./data/ratings_small.csv"
+    ratings = pd.read_csv(ratings_file)
     links = pd.read_csv("./data/links.csv")
     logger.info("loaded ratings table")
     movie_ids = links["movieId"].tolist()

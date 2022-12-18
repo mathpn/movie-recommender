@@ -273,9 +273,9 @@ def train_kmf_model(
 
 async def run_train_pipeline(
     pool: asyncpg.Pool,
-    emb_dim: int,
-    proportion: float,
-    test_split: float,
+    emb_dim: int = 40,
+    proportion: float = 1.0,
+    test_size: float = 0.2,
     alpha: float = 0.01,
     verbose: bool = False,
 ) -> None:
@@ -287,7 +287,7 @@ async def run_train_pipeline(
         users_2_ids,
         movies_2_ids,
         emb_dim,
-        test_size=test_split,
+        test_size=test_size,
         alpha=alpha,
         verbose=verbose,
     )
@@ -355,20 +355,20 @@ def train_new_user_vector(
 
 async def online_user_pipeline(
     pool: asyncpg.Pool, user_id: int, verbose: bool = False, min_count: int = 10
-) -> None:
+) -> bool:
     ratings = await get_user_ratings(pool, user_id)
     if ratings is None:
         logger.warning(
             f"online user pipeline: user ID {user_id} not found, interrupting pipeline"
         )
-        return
+        return False
 
     global_bias = await get_global_bias(pool)
     if global_bias is None:
         logger.warning(
             f"online user pipeline: global bias not set, interrupting pipeline"
         )
-        return
+        return False
 
     tasks = [
         asyncio.create_task(get_movie_vector_bias(pool, r.movie_id)) for r in ratings
@@ -386,7 +386,7 @@ async def online_user_pipeline(
         logger.warning(
             f"online user pipeline: no movie vectors retrieved for user {user_id}, interrupting pipeline"
         )
-        return
+        return False
 
     items_emb = torch.tensor([v.vector for v in valid_vb])
     items_bias = torch.tensor([v.bias for v in valid_vb])
@@ -394,7 +394,7 @@ async def online_user_pipeline(
         logger.info(
             f"not enough ratings ({len(items_bias)}) for {user_id}, online training aborted"
         )
-        return
+        return False
 
     new_vector_bias = await run_in_threadpool(
         train_new_user_vector,
@@ -407,6 +407,7 @@ async def online_user_pipeline(
     )
     logger.info(f"writing new vector_bias for user {user_id}")
     await write_user_vector_bias(pool, new_vector_bias)
+    return True
 
 
 async def main():

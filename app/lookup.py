@@ -147,7 +147,6 @@ async def recommend(
     keyword_searcher: KeywordSearcher,
     kmf_inference: KMFInferece,
     k: int = 6,
-    pool=None,  # TODO remove
 ) -> list[int]:
     recos_by_genre = genre_searcher.search_by_movie(movie_id=movie_id, k=2000)
 
@@ -165,9 +164,6 @@ async def recommend(
     else:
         recos_by_user = []
 
-    logger.debug(
-        f"{await get_movie_titles(pool, recos_by_kw) = }\n{await get_movie_titles(pool, recos_by_user) = }"
-    )  # TODO remove
     n_user_recos = min(k // 2, len(recos_by_user)) + max(0, k // 2 - len(recos_by_kw))
     merged_recos = recos_by_kw[: (k - n_user_recos)] + recos_by_user[:n_user_recos]
     logger.info(f"found {len(merged_recos)} recommendations for user {user_id}")

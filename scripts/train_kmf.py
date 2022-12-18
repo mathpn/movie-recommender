@@ -27,7 +27,7 @@ async def main():
         default=1.0,
         help="proportion of rating data to use for training",
     )
-    parser.add_argument("--test-split", type=float, default=0.8)
+    parser.add_argument("--test-size", type=float, default=0.2)
     parser.add_argument("--alpha", type=float, default=0.1)
     parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
@@ -37,7 +37,7 @@ async def main():
     pool = await asyncpg.create_pool(os.environ.get("POSTGRES_URI", POSTGRES_URI))
 
     await run_train_pipeline(
-        pool, args.emb_dim, args.proportion, args.test_split, args.alpha, verbose=True
+        pool, args.emb_dim, args.proportion, args.test_size, args.alpha, verbose=True
     )
 
 
