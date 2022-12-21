@@ -46,18 +46,18 @@ Kernel Matrix Factorization is a generalization of the common [SVD](https://surp
 
 The training objective is to predict the rating each user gave to a movie as a product of two vectors (movie and user vectors) plus their corresponding biases. A global bias is added due to the sigmoid kernel to allow shifting the mean.
 
-This kind of model has proven to produce good results. However, when new user ratings arrive, the model would need to be trained again from scratch. In the current state, this system uses a small ratings dataset so that the training is very fast, but in live systems the number of ratings would grow rapidly. This makes retraining the entire model for every new (batch of) rating not feasible.
+This kind of model has proven to produce good results (see Netflix prize). However, when new user ratings arrive, the model would need to be trained again from scratch. In the current state, this system uses a small ratings dataset so that the training is very fast, but in live systems the number of ratings would grow rapidly. This makes retraining the entire model for every new (batch of) rating not feasible.
 
 The solution was found in [this paper](https://doi.org/10.1145/1454008.1454047), in which they present an algorithm for online-updating the user vectors and biases. In summary, the movie vectors are fixed and only the user vector is updated using gradient descent. This allows updating an existing user vector with new ratings as well as adding new users without retraining the entire model every time.
 
-New ratings are kept in memory. When a threshold is reached for a given user, an online-update training step updated that user's vector and bias information. The drawback of this approach is that data can be lost since it's in memory. It's also written to the database, so all data will eventually be incorporated into the model when a new full-training happens.
+New ratings are kept in memory. When a threshold is reached for a given user, an online-update training step updates that user's vector and bias information. The drawback of this approach is that data can be lost since it's in memory. It's also written to the database, so all data will eventually be incorporated into the model when a new full-training happens.
 
 
 ## The dataset
 
 Please download the data from [Kaggle](https://www.kaggle.com/datasets/rounakbanik/the-movies-dataset). Version 7 was used to develop this project and it's not guarateed to work with future versions. Download the CSV files and save them to the ./data folder inside this project's folder.
 
-Please note that by default the service only uses ratings_small to speed up data import and model training, so the large version of this file are not required. Please note that using the full dataset requires much more memory for model training.
+Please note that by default the service only uses ratings_small to speed up data import and model training, so the large version of this file are not required. Using the full dataset requires much more memory for model training.
 
 
 ## Developing environment
@@ -83,5 +83,4 @@ The service will be available at http://0.0.0.0:8383/
 
 ### Testing
 
-export PYTHONPATH=.:app
-pytest .
+    export PYTHONPATH=.:app && pytest .
