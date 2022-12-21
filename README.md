@@ -1,5 +1,5 @@
 # movie-recommender
-A movie recommender built using The Movie Dataset (from Kaggle).
+A movie recommender built using The Movie Dataset (from Kaggle), FastAPI and PyTorch. The service can run as a Docker image.
 
 ## How it works
 
