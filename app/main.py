@@ -99,7 +99,6 @@ async def recommend_json(
         keyword_searcher,
         kmf_inference,
         k=k,
-        pool=pool,
     )
     recos_titles = await get_movie_titles(pool, recos)
     return JSONResponse(recos_titles)
